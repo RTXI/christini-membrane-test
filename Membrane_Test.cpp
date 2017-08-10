@@ -276,12 +276,10 @@ int Membrane_Test::Module::MP_Calculate(void) {
   }
 
   double tau = (tau1 + tau2) / 2.0;
-
   double Q1 = (Q11 + Q12) / 2.0;
   double Q2 = fabs(I1 - I2) * tau;
   double Qt = Q1 + Q2;
-
-  double Rt = Vpp * 1e-3 / fabs(I1 - I2);
+  double rt = Vpp * 1e-3 / fabs(I1 - I2);
 
   ra = tau * Vpp * 1e-3 / Qt;
   rm = rt - ra;

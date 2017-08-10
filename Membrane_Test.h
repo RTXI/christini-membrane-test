@@ -66,7 +66,6 @@ class Module: public QWidget, public RT::Thread, public Plugin::Object,
   int mp_updatePeriod; // Period at which calculation occurs
   int mp_stepsTotal; // Number of steps to be averaged
   int mp_stepsDone;
-  double rt;
   double cm;
   double ra;
   double rm;
