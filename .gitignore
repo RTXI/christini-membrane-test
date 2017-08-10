@@ -1,3 +1,5 @@
+.libs/
+Membrane_Test_MainWindow_UI.h
 *.lo
 *.o
 *.la
