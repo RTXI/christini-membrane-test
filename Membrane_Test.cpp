@@ -49,6 +49,7 @@ Membrane_Test::Module::Module() :
                  " Membrane Test Module");
   createGUI();
   initialize(); // Initialize module variables
+  modify();
   show();
 }
 
@@ -348,7 +349,7 @@ void Membrane_Test::Module::createGUI() {
   // Membrane properties
   QObject::connect(mtUi.mp_acquire_button, SIGNAL(toggled(bool)),
                    this, SLOT(toggle_mp_acquire(bool)));
-  QObject::connect(mtUi.mp_updateRate_spinBox, SIGNAL(valueChanged(double)),
+  QObject::connect(mtUi.mp_updatePeriod_spinBox, SIGNAL(valueChanged(int)),
                    this, SLOT(modify()));
   QObject::connect(mtUi.mp_steps_spinBox, SIGNAL(valueChanged(int)),
                    this, SLOT(modify()));
@@ -359,7 +360,7 @@ void Membrane_Test::Module::createGUI() {
                    mtUi.mp_acquire_button, SLOT(setEnabled(bool)));
   // Update rate is only enabled when membrane property calculation is off
   QObject::connect(mtUi.mp_acquire_button, SIGNAL(toggled(bool)),
-                   mtUi.mp_updateRate_spinBox, SLOT(setDisabled(bool)));
+                   mtUi.mp_updatePeriod_spinBox, SLOT(setDisabled(bool)));
   // Display updates
   QObject::connect(timer, SIGNAL(timeout(void)),
                    this, SLOT(update_rm_display(void)));
@@ -390,8 +391,8 @@ void Membrane_Test::Module::initialize() {
   mp_on = false;
   mp_dataFinished = false;
   mp_collectData = false;
-  mp_updateRate = 1.0;
-  mp_stepsTotal = 50;
+  mp_updatePeriod = 30;
+  mp_stepsTotal = 500;
   mp_stepsDone = 0;
   mp_mode = CONTINUOUS;
   cm = 0;
@@ -406,6 +407,9 @@ void Membrane_Test::Module::modify() {
   setActive(false);
   Membrane_Test_SyncEvent event;
   RT::System::getInstance()->postEvent(&event);
+
+  // Restart data collection if parameters are changed
+  mp_collectData = false;
 
   // Resistance measurement
   holdingVoltageOption_1 = mtUi.holdingVoltage1_spinBox->value();
@@ -425,8 +429,10 @@ void Membrane_Test::Module::modify() {
       (RT::System::getInstance()->getPeriod() * 1e-9);
 
   // Membrane properties
-  mp_updateRate = mtUi.mp_updateRate_spinBox->value();
   mp_stepsTotal = mtUi.mp_steps_spinBox->value();
+  // Set update period minimum based on number of steps to be averaged
+  mtUi.mp_updatePeriod_spinBox->setMinimum(mp_stepsTotal * pulseWidth / 1e3);
+  mp_updatePeriod = mtUi.mp_updatePeriod_spinBox->value();
   mp_mode = static_cast<mp_mode_t>(mtUi.mp_mode_comboBox->currentIndex());
 
   setActive(active);
@@ -441,8 +447,8 @@ void Membrane_Test::Module::toggle_pulse(bool on) {
     output(0) = 0;
   }
   else if (mp_on)
-    // Start timer, convert Hz to ms
-    mp_timer->start((1.0 / mp_updateRate) * 1e3);
+    // Start timer, convert s to ms
+    mp_timer->start(mp_updatePeriod / 1e3);
 }
 
 void Membrane_Test::Module::toggle_mp_acquire(bool on) {
@@ -450,8 +456,8 @@ void Membrane_Test::Module::toggle_mp_acquire(bool on) {
     mp_collectData = false;
     mp_dataFinished = false;
     mp_on = true;
-    // Start timer, convert Hz to ms
-    mp_timer->start((1.0 / mp_updateRate) * 1e3);
+    // Start timer, convert s to ms
+    mp_timer->start(mp_updatePeriod / 1e3);
   }
   else {
     if (mp_timer->isActive())
@@ -544,7 +550,7 @@ void Membrane_Test::Module::update_mp_display() {
     }
 
     if (mp_mode == SINGLE) {
-      mtUi.mp_acquire_button->setDown(false);
+      mtUi.mp_acquire_button->setChecked(false);
       mp_timer->stop();
     }
     else { // Start next calculation

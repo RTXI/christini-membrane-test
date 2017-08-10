@@ -441,7 +441,7 @@
                 </font>
                </property>
                <property name="text">
-                <string>Width (mS)</string>
+                <string>Width (ms)</string>
                </property>
                <property name="alignment">
                 <set>Qt::AlignCenter</set>
@@ -590,6 +590,9 @@
         <property name="checkable">
          <bool>true</bool>
         </property>
+        <property name="checked">
+         <bool>false</bool>
+        </property>
        </widget>
       </item>
       <item>
@@ -611,7 +614,7 @@
       <item>
        <layout class="QHBoxLayout" name="horizontalLayout_3">
         <item>
-         <widget class="QLabel" name="mp_updateRate_label">
+         <widget class="QLabel" name="mp_updatePeriod_label">
           <property name="font">
            <font>
             <pointsize>10</pointsize>
@@ -620,12 +623,18 @@
            </font>
           </property>
           <property name="text">
-           <string>Update Rate (Hz)</string>
+           <string>Update Period (s)</string>
           </property>
          </widget>
         </item>
         <item>
-         <widget class="QDoubleSpinBox" name="mp_updateRate_spinBox">
+         <widget class="QSpinBox" name="mp_updatePeriod_spinBox">
+          <property name="minimumSize">
+           <size>
+            <width>50</width>
+            <height>25</height>
+           </size>
+          </property>
           <property name="font">
            <font>
             <pointsize>10</pointsize>
@@ -633,26 +642,26 @@
             <bold>true</bold>
            </font>
           </property>
+          <property name="autoFillBackground">
+           <bool>false</bool>
+          </property>
           <property name="alignment">
            <set>Qt::AlignCenter</set>
           </property>
           <property name="buttonSymbols">
            <enum>QAbstractSpinBox::PlusMinus</enum>
           </property>
-          <property name="decimals">
+          <property name="minimum">
            <number>1</number>
           </property>
-          <property name="minimum">
-           <double>0.100000000000000</double>
-          </property>
           <property name="maximum">
-           <double>10.000000000000000</double>
+           <number>5000</number>
           </property>
           <property name="singleStep">
-           <double>0.100000000000000</double>
+           <number>10</number>
           </property>
           <property name="value">
-           <double>1.000000000000000</double>
+           <number>30</number>
           </property>
          </widget>
         </item>
@@ -720,8 +729,11 @@
           <property name="maximum">
            <number>5000</number>
           </property>
+          <property name="singleStep">
+           <number>10</number>
+          </property>
           <property name="value">
-           <number>50</number>
+           <number>500</number>
           </property>
          </widget>
         </item>
@@ -830,7 +842,7 @@
      </property>
      <property name="font">
       <font>
-       <pointsize>32</pointsize>
+       <pointsize>36</pointsize>
        <weight>75</weight>
        <bold>true</bold>
       </font>

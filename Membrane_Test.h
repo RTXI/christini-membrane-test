@@ -62,8 +62,8 @@ class Module: public QWidget, public RT::Thread, public Plugin::Object,
   bool mp_on;
   bool mp_collectData;
   bool mp_dataFinished;
-  std::vector<double> mp_data; // Ve
-  double mp_updateRate; // Rate (Hz) at which calculation occurs
+  std::vector<double> mp_data; // Vector holding current data
+  int mp_updatePeriod; // Period at which calculation occurs
   int mp_stepsTotal; // Number of steps to be averaged
   int mp_stepsDone;
   double rt;
