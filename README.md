@@ -2,5 +2,5 @@
 ---
 
 ### Introduction
-Real-Time eXperimental Interface module to estimate and inject amount of current
-required to reverse repolarization in guinea pig cardiomyocytes.
+Real-Time eXperimental Interface module to measure pipette resistance and
+membrane properties during patch clamp experiments.
