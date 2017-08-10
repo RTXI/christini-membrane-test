@@ -408,7 +408,7 @@
                 <number>0</number>
                </property>
                <property name="maximum">
-                <number>10000</number>
+                <number>100</number>
                </property>
                <property name="value">
                 <number>10</number>
@@ -489,7 +489,7 @@
                 <enum>QAbstractSpinBox::PlusMinus</enum>
                </property>
                <property name="minimum">
-                <number>0</number>
+                <number>1</number>
                </property>
                <property name="maximum">
                 <number>10000</number>
@@ -785,6 +785,12 @@
    </item>
    <item row="1" column="0">
     <widget class="QLabel" name="resistance_valueLabel">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
      <property name="palette">
       <palette>
        <active>
@@ -835,6 +841,9 @@
      <property name="textFormat">
       <enum>Qt::RichText</enum>
      </property>
+     <property name="scaledContents">
+      <bool>true</bool>
+     </property>
      <property name="alignment">
       <set>Qt::AlignCenter</set>
      </property>
@@ -842,6 +851,12 @@
    </item>
    <item row="1" column="1">
     <widget class="QFrame" name="frame_3">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Expanding" vsizetype="MinimumExpanding">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
      <property name="frameShape">
       <enum>QFrame::Box</enum>
      </property>

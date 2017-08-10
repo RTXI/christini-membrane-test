@@ -27,6 +27,7 @@ class Module: public QWidget, public RT::Thread, public Plugin::Object,
 
  public slots:
   void update_rm_display(); // Refresh resistance measurement display
+  void resize_rm_text(); // Resizes resistance measurement font
   void update_mp_display(); // Refresh membrane property values
   void modify(); // Update parameters
   void toggle_pulse(bool); // Called when pulse button is pressed
@@ -37,7 +38,8 @@ class Module: public QWidget, public RT::Thread, public Plugin::Object,
   QWidget *mtWindow;
   QMdiSubWindow *subWindow;
   Ui::Membrane_Test_UI mtUi;
-  QTimer *mp_timer;
+  QTimer *mp_timer; // Membrane properties timer
+  QTimer *rs_timer; // Resize timer
   QChar omega; // Greek letter omega for resistance
 
   // Counters
@@ -80,6 +82,8 @@ class Module: public QWidget, public RT::Thread, public Plugin::Object,
  protected:
   void doLoad(const Settings::Object::State &);
   void doSave(Settings::Object::State &) const;
+  // Reimplement resize event function for resizing of resistance label text
+  virtual void resizeEvent(QResizeEvent *);
 }; // Class Module
 }; // Namespace Membrane_Test
 

@@ -318,7 +318,9 @@ void Membrane_Test::Module::createGUI() {
   QTimer *timer = new QTimer(this);
   timer->start(100); // 100ms refresh rate
 
-  // Set timer for membrane properties
+  // Set timers
+  rs_timer = new QTimer(this);
+  rs_timer->setSingleShot(true);
   mp_timer = new QTimer(this);
 
   omega = QChar(0x3A9); // Greek letter omega for resistance
@@ -361,6 +363,8 @@ void Membrane_Test::Module::createGUI() {
   // Display updates
   QObject::connect(timer, SIGNAL(timeout(void)),
                    this, SLOT(update_rm_display(void)));
+  QObject::connect(rs_timer, SIGNAL(timeout(void)),
+                   this, SLOT(resize_rm_text(void)));
   QObject::connect(mp_timer, SIGNAL(timeout(void)),
                    this, SLOT(update_mp_display(void)));
 
@@ -472,7 +476,7 @@ void Membrane_Test::Module::update_rm_display() {
     }
 
   QString RString;
-  RString.sprintf("%7.3f", R);
+  RString.sprintf("%7.5g", R);
 
   // Choose appropriate suffic based on exponent
   if(exp) {
@@ -488,8 +492,37 @@ void Membrane_Test::Module::update_rm_display() {
       suffic.sprintf(" * 1e%lu", 3 * exp);
     }
   }
+  else RString.append(" ").append(omega);
 
   mtUi.resistance_valueLabel->setText(RString);
+}
+
+void Membrane_Test::Module::resize_rm_text() {
+  // Resize text if window was enlarged or shrunk
+  // Grab current info of label
+  QFont labelFont = mtUi.resistance_valueLabel->font();
+  const QRect labelRect = mtUi.resistance_valueLabel->contentsRect();
+
+  // Using placeholder text rather than actual text of label since boundingRect
+  // cannot deal with RichText
+  const QString labelText = "000.00 XXX";
+
+  // Test increasing sizes until font size is too big, starting with a minimum
+  // font size of 32
+  QFont testFont(labelFont);
+  int fontSizeGuess = 28; // Minimum font size
+  for( ; ; ++fontSizeGuess) {
+    testFont.setPointSize(fontSizeGuess);
+    const QRect testRect =
+        QFontMetrics(testFont).boundingRect(labelRect, Qt::AlignCenter,
+                                            labelText);
+    if (testRect.height() >= labelRect.height() ||
+        testRect.width() >= labelRect.width() || fontSizeGuess > 100)
+      break;
+  }
+
+  labelFont.setPointSize(fontSizeGuess - 1);
+  mtUi.resistance_valueLabel->setFont(labelFont);
 }
 
 // Membrane property values
@@ -523,7 +556,7 @@ void Membrane_Test::Module::update_mp_display() {
 }
 
 // Event handling
-void Membrane_Test::Module::receiveEvent( const ::Event::Object *event ) {
+void Membrane_Test::Module::receiveEvent(const ::Event::Object *event) {
   // When thread rate is changed, update rate dependent parameters
   if(event->getName() == Event::RT_POSTPERIOD_EVENT) {
     // Number of loops for complete step (2x pulse width)
@@ -535,13 +568,18 @@ void Membrane_Test::Module::receiveEvent( const ::Event::Object *event ) {
   }
 }
 
-void Membrane_Test::Module::receiveEventRT( const ::Event::Object *event ) {
+void Membrane_Test::Module::receiveEventRT(const ::Event::Object *event) {
   // When thread rate is changed, update rate dependent parameters
   if(event->getName() == Event::RT_POSTPERIOD_EVENT) {
     // Number of loops for complete step (2x pulse width)
     cnt = ((2.0 * pulseWidth) * 1e-3) /
         (RT::System::getInstance()->getPeriod() * 1e-9);
   }
+}
+
+// Resize resistance label text during window resizes
+void Membrane_Test::Module::resizeEvent(QResizeEvent *) {
+  rs_timer->start(50);
 }
 
 // Settings loading and saving
