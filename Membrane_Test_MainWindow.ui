@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>485</width>
-    <height>413</height>
+    <width>480</width>
+    <height>392</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -37,7 +37,7 @@
         <property name="maximumSize">
          <size>
           <width>16777215</width>
-          <height>20</height>
+          <height>15</height>
          </size>
         </property>
         <property name="font">
@@ -203,7 +203,7 @@
                <property name="sizeHint" stdset="0">
                 <size>
                  <width>20</width>
-                 <height>5</height>
+                 <height>0</height>
                 </size>
                </property>
               </spacer>
@@ -274,7 +274,7 @@
                <property name="sizeHint" stdset="0">
                 <size>
                  <width>20</width>
-                 <height>5</height>
+                 <height>0</height>
                 </size>
                </property>
               </spacer>
@@ -426,7 +426,7 @@
                <property name="sizeHint" stdset="0">
                 <size>
                  <width>20</width>
-                 <height>13</height>
+                 <height>0</height>
                 </size>
                </property>
               </spacer>
@@ -459,7 +459,7 @@
                <property name="sizeHint" stdset="0">
                 <size>
                  <width>20</width>
-                 <height>20</height>
+                 <height>5</height>
                 </size>
                </property>
               </spacer>
@@ -526,13 +526,13 @@
         <property name="minimumSize">
          <size>
           <width>0</width>
-          <height>20</height>
+          <height>15</height>
          </size>
         </property>
         <property name="maximumSize">
          <size>
           <width>16777215</width>
-          <height>20</height>
+          <height>15</height>
          </size>
         </property>
         <property name="font">
@@ -603,7 +603,7 @@
         <property name="sizeHint" stdset="0">
          <size>
           <width>20</width>
-          <height>1</height>
+          <height>0</height>
          </size>
         </property>
        </spacer>
@@ -669,7 +669,7 @@
         <property name="sizeHint" stdset="0">
          <size>
           <width>20</width>
-          <height>13</height>
+          <height>0</height>
          </size>
         </property>
        </spacer>
@@ -738,7 +738,7 @@
         <property name="sizeHint" stdset="0">
          <size>
           <width>20</width>
-          <height>1</height>
+          <height>0</height>
          </size>
         </property>
        </spacer>
@@ -775,7 +775,7 @@
         <property name="sizeHint" stdset="0">
          <size>
           <width>20</width>
-          <height>10</height>
+          <height>0</height>
          </size>
         </property>
        </spacer>

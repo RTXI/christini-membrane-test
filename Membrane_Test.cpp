@@ -9,7 +9,7 @@
 
 #include <QtGlobal>
 #include <QtWidgets>
-size_t debug = 0;
+
 namespace {
 class Membrane_Test_SyncEvent : public RT::Event {
  public:
@@ -63,9 +63,8 @@ void Membrane_Test::Module::execute() {
   // First section (voltage step on)
   if (idx < (cnt / 2)) {
     // Only 2nd half of current used for resistance measurement
-    if (idx >= (cnt / 4)) {
+    if (idx >= (cnt / 4))
       I_1 += input(0); // Current during voltage on step
-    }
 
     // Voltage step on, convert from mV to V
     output(0) = (holdingVoltage + pulseAmp) * 1e-3;
@@ -73,6 +72,7 @@ void Membrane_Test::Module::execute() {
   else { // Second section (voltage step off)
     if (idx >= (3 * cnt) / 4)
       I_2 += input(0); // Current during voltage off step
+
     // Voltage step off, convert from mV to V
     output(0) = (holdingVoltage) * 1e-3;
   }
@@ -417,6 +417,8 @@ void Membrane_Test::Module::modify() {
 
   pulseAmp = mtUi.pulseAmp_spinBox->value();
   pulseWidth = mtUi.pulseWidth_spinBox->value();
+  cnt = ((2.0 * pulseWidth) * 1e-3) /
+      (RT::System::getInstance()->getPeriod() * 1e-9);
 
   // Membrane properties
   mp_updateRate = mtUi.mp_updateRate_spinBox->value();
