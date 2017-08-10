@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>516</width>
-    <height>421</height>
+    <width>485</width>
+    <height>413</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -31,7 +31,7 @@
         <property name="minimumSize">
          <size>
           <width>0</width>
-          <height>20</height>
+          <height>15</height>
          </size>
         </property>
         <property name="maximumSize">
@@ -42,9 +42,10 @@
         </property>
         <property name="font">
          <font>
-          <pointsize>13</pointsize>
+          <pointsize>11</pointsize>
           <weight>75</weight>
           <bold>true</bold>
+          <underline>false</underline>
          </font>
         </property>
         <property name="text">
@@ -81,7 +82,7 @@
        <widget class="QPushButton" name="pulse_button">
         <property name="font">
          <font>
-          <pointsize>13</pointsize>
+          <pointsize>11</pointsize>
           <weight>75</weight>
           <bold>true</bold>
          </font>
@@ -114,6 +115,7 @@
             </property>
             <property name="font">
              <font>
+              <pointsize>10</pointsize>
               <weight>75</weight>
               <bold>true</bold>
              </font>
@@ -163,6 +165,7 @@
                  </property>
                  <property name="font">
                   <font>
+                   <pointsize>10</pointsize>
                    <weight>75</weight>
                    <bold>true</bold>
                   </font>
@@ -233,6 +236,7 @@
                  </property>
                  <property name="font">
                   <font>
+                   <pointsize>10</pointsize>
                    <weight>75</weight>
                    <bold>true</bold>
                   </font>
@@ -300,6 +304,7 @@
                  </property>
                  <property name="font">
                   <font>
+                   <pointsize>10</pointsize>
                    <weight>75</weight>
                    <bold>true</bold>
                   </font>
@@ -353,6 +358,7 @@
            <widget class="QLabel" name="amp_label">
             <property name="font">
              <font>
+              <pointsize>10</pointsize>
               <weight>75</weight>
               <bold>true</bold>
              </font>
@@ -384,6 +390,7 @@
                </property>
                <property name="font">
                 <font>
+                 <pointsize>10</pointsize>
                  <weight>75</weight>
                  <bold>true</bold>
                 </font>
@@ -428,6 +435,7 @@
               <widget class="QLabel" name="width_label">
                <property name="font">
                 <font>
+                 <pointsize>10</pointsize>
                  <weight>75</weight>
                  <bold>true</bold>
                 </font>
@@ -466,6 +474,7 @@
                </property>
                <property name="font">
                 <font>
+                 <pointsize>10</pointsize>
                  <weight>75</weight>
                  <bold>true</bold>
                 </font>
@@ -528,7 +537,7 @@
         </property>
         <property name="font">
          <font>
-          <pointsize>13</pointsize>
+          <pointsize>11</pointsize>
           <weight>75</weight>
           <bold>true</bold>
          </font>
@@ -570,7 +579,7 @@
         </property>
         <property name="font">
          <font>
-          <pointsize>13</pointsize>
+          <pointsize>11</pointsize>
           <weight>75</weight>
           <bold>true</bold>
          </font>
@@ -605,6 +614,7 @@
          <widget class="QLabel" name="mp_updateRate_label">
           <property name="font">
            <font>
+            <pointsize>10</pointsize>
             <weight>75</weight>
             <bold>true</bold>
            </font>
@@ -618,6 +628,7 @@
          <widget class="QDoubleSpinBox" name="mp_updateRate_spinBox">
           <property name="font">
            <font>
+            <pointsize>10</pointsize>
             <weight>75</weight>
             <bold>true</bold>
            </font>
@@ -669,6 +680,7 @@
          <widget class="QLabel" name="mp_steps_label">
           <property name="font">
            <font>
+            <pointsize>10</pointsize>
             <weight>75</weight>
             <bold>true</bold>
            </font>
@@ -688,6 +700,7 @@
           </property>
           <property name="font">
            <font>
+            <pointsize>10</pointsize>
             <weight>75</weight>
             <bold>true</bold>
            </font>
@@ -734,6 +747,7 @@
        <widget class="QComboBox" name="mp_mode_comboBox">
         <property name="font">
          <font>
+          <pointsize>10</pointsize>
           <weight>75</weight>
           <bold>true</bold>
          </font>
@@ -810,7 +824,7 @@
      </property>
      <property name="font">
       <font>
-       <pointsize>36</pointsize>
+       <pointsize>32</pointsize>
        <weight>75</weight>
        <bold>true</bold>
       </font>
@@ -844,7 +858,7 @@
          <widget class="QLabel" name="cm_label">
           <property name="font">
            <font>
-            <pointsize>14</pointsize>
+            <pointsize>12</pointsize>
             <weight>75</weight>
             <bold>true</bold>
            </font>
@@ -864,7 +878,7 @@
          <widget class="QLabel" name="cm_valueLabel">
           <property name="font">
            <font>
-            <pointsize>12</pointsize>
+            <pointsize>11</pointsize>
             <weight>75</weight>
             <bold>true</bold>
            </font>
@@ -888,7 +902,7 @@
          <widget class="QLabel" name="ra_label">
           <property name="font">
            <font>
-            <pointsize>14</pointsize>
+            <pointsize>12</pointsize>
             <weight>75</weight>
             <bold>true</bold>
            </font>
@@ -908,7 +922,7 @@
          <widget class="QLabel" name="ra_valueLabel">
           <property name="font">
            <font>
-            <pointsize>12</pointsize>
+            <pointsize>11</pointsize>
             <weight>75</weight>
             <bold>true</bold>
            </font>
@@ -932,7 +946,7 @@
          <widget class="QLabel" name="rm_label_2">
           <property name="font">
            <font>
-            <pointsize>14</pointsize>
+            <pointsize>12</pointsize>
             <weight>75</weight>
             <bold>true</bold>
            </font>
@@ -952,7 +966,7 @@
          <widget class="QLabel" name="rm_valueLabel">
           <property name="font">
            <font>
-            <pointsize>12</pointsize>
+            <pointsize>11</pointsize>
             <weight>75</weight>
             <bold>true</bold>
            </font>

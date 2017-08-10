@@ -9,7 +9,7 @@
 
 #include <QtGlobal>
 #include <QtWidgets>
-
+size_t debug = 0;
 namespace {
 class Membrane_Test_SyncEvent : public RT::Event {
  public:
@@ -63,14 +63,15 @@ void Membrane_Test::Module::execute() {
   // First section (voltage step on)
   if (idx < (cnt / 2)) {
     // Only 2nd half of current used for resistance measurement
-    if (idx > (cnt / 4))
+    if (idx >= (cnt / 4)) {
       I_1 += input(0); // Current during voltage on step
+    }
 
     // Voltage step on, convert from mV to V
     output(0) = (holdingVoltage + pulseAmp) * 1e-3;
   }
   else { // Second section (voltage step off)
-    if (idx > (3 * cnt) / 4)
+    if (idx >= (3 * cnt) / 4)
       I_2 += input(0); // Current during voltage off step
     // Voltage step off, convert from mV to V
     output(0) = (holdingVoltage) * 1e-3;
@@ -407,9 +408,9 @@ void Membrane_Test::Module::modify() {
   holdingVoltageOption_2 = mtUi.holdingVoltage2_spinBox->value();
   holdingVoltageOption_3 = mtUi.holdingVoltage3_spinBox->value();
 
-  if (mtUi.holdingVoltage1_button->isDown())
+  if (mtUi.holdingVoltage1_button->isChecked())
     holdingVoltage = holdingVoltageOption_1;
-  else if (mtUi.holdingVoltage2_button->isDown())
+  else if (mtUi.holdingVoltage2_button->isChecked())
     holdingVoltage = holdingVoltageOption_2;
   else
     holdingVoltage = holdingVoltageOption_3;
@@ -476,7 +477,10 @@ void Membrane_Test::Module::update_rm_display() {
     if(exp == 1)
       RString.append(" K").append(omega);
     else if (exp == 2)
+      RString.append(" M").append(omega);
+    else if (exp == 3)
       RString.append(" G").append(omega);
+
     else {
       QString suffic;
       suffic.sprintf(" * 1e%lu", 3 * exp);
