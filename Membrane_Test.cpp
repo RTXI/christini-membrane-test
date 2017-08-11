@@ -127,13 +127,13 @@ int Membrane_Test::Module::MP_Calculate(void) {
   for (size_t i = static_cast<size_t>(round(data_size /2 - ceil(data_size/8)));
        i < data_size / 2; ++i)
     I1 += mp_data[i];
-  I1 /= ceil(data_size/8);
+  I1 /= ceil(data_size / 8);
 
   double I2 = 0.0;
   for(size_t i = static_cast<size_t>(round(data_size - ceil(data_size / 8)));
       i < data_size;++i)
     I2 += mp_data[i];
-  I2 /= ceil(data_size/8);
+  I2 /= ceil(data_size / 8);
 
   double dt = RT::System::getInstance()->getPeriod() * 1e-6;
 
@@ -146,7 +146,7 @@ int Membrane_Test::Module::MP_Calculate(void) {
     Q11 = fabs(Q11);
 
     size_t xi = 0;
-    for(; mp_data[xi] <= mp_data[xi + 1]; ++xi);
+    for( ; mp_data[xi] <= mp_data[xi + 1]; ++xi);
 
     double sy = 0.0;
     double Y = mp_data[xi];
@@ -428,10 +428,13 @@ void Membrane_Test::Module::modify() {
 
   // Membrane properties
   mp_stepsTotal = mtUi.mp_steps_spinBox->value();
-  // Set update period minimum based on number of steps to be averaged
-  mtUi.mp_updatePeriod_spinBox->setMinimum(mp_stepsTotal * pulseWidth / 1e3);
-  mp_updatePeriod = mtUi.mp_updatePeriod_spinBox->value();
   mp_mode = static_cast<mp_mode_t>(mtUi.mp_mode_comboBox->currentIndex());
+
+  // Set update period minimum based on number of steps to be averaged
+  int min_updatePeriod =
+      static_cast<int>(ceil(mp_stepsTotal * pulseWidth / 1e3));
+  mtUi.mp_updatePeriod_spinBox->setMinimum(std::max(1, min_updatePeriod));
+  mp_updatePeriod = mtUi.mp_updatePeriod_spinBox->value();
 
   setActive(active);
 }
@@ -595,6 +598,25 @@ void Membrane_Test::Module::doLoad(const Settings::Object::State &s) {
     subWindow->resize(s.loadInteger("W"), s.loadInteger("H"));
     parentWidget()->move(s.loadInteger("X"), s.loadInteger("Y"));
   }
+
+  int holdingSelection = s.loadInteger("Holding selection");
+  if (holdingSelection == 1)
+    mtUi.holdingVoltage1_button->setChecked(true);
+  else if (holdingSelection == 2)
+    mtUi.holdingVoltage2_button->setChecked(true);
+  else
+    mtUi.holdingVoltage3_button->setChecked(true);
+
+  mtUi.holdingVoltage1_spinBox->setValue(s.loadInteger("Holding voltage 1"));
+  mtUi.holdingVoltage2_spinBox->setValue(s.loadInteger("Holding voltage 2"));
+  mtUi.holdingVoltage2_spinBox->setValue(s.loadInteger("Holding voltage 3"));
+
+  mtUi.pulseAmp_spinBox->setValue(s.loadInteger("Pulse amp"));
+  mtUi.pulseWidth_spinBox->setValue(s.loadInteger("Pulse width"));
+
+  mtUi.mp_steps_spinBox->setValue(s.loadInteger("MP steps total"));
+  mtUi.mp_updatePeriod_spinBox->setValue(s.loadInteger("MP update period"));
+  mtUi.mp_mode_comboBox->setCurrentIndex(s.loadInteger("MP mode"));
 }
 
 void Membrane_Test::Module::doSave(Settings::Object::State &s) const {
@@ -609,4 +631,23 @@ void Membrane_Test::Module::doSave(Settings::Object::State &s) const {
   s.saveInteger("Y", pos.y());
   s.saveInteger("W", subWindow->width());
   s.saveInteger("H", subWindow->height());
+
+  // Parameters
+  int holdingSelection;
+  if (mtUi.holdingVoltage1_button->isChecked())
+    holdingSelection = 1;
+  else if (mtUi.holdingVoltage2_button->isChecked())
+    holdingSelection = 2;
+  else
+    holdingSelection = 3;
+
+  s.saveInteger("Holding selection", holdingSelection);
+  s.saveInteger("Holding voltage 1", mtUi.holdingVoltage1_spinBox->value());
+  s.saveInteger("Holding voltage 2", mtUi.holdingVoltage2_spinBox->value());
+  s.saveInteger("Holding voltage 3", mtUi.holdingVoltage3_spinBox->value());
+  s.saveInteger("Pulse amp", pulseAmp);
+  s.saveInteger("Pulse width", pulseWidth);
+  s.saveInteger("MP steps total", mp_stepsTotal);
+  s.saveInteger("MP update period", mp_updatePeriod);
+  s.saveInteger("MP mode", static_cast<int>(mp_mode));
 }
