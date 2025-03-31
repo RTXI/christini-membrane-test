@@ -1,3 +1,4 @@
+#include <QMdiSubWindow>
 #include <cmath>
 #include <cstddef>
 
@@ -10,9 +11,14 @@
 #include <rtxi/rt.hpp>
 #include <rtxi/rtos.hpp>
 
+#include "ui_Membrane_Test_MainWindow.h"
+
 membrane_test::Plugin::Plugin(Event::Manager* ev_manager)
     : Widgets::Plugin(ev_manager, std::string(membrane_test::MODULE_NAME))
 {
+  if (RT::OS::getFifo(this->Fifo, 100000) != 0) {
+    ERROR_MSG("Unable to create Fifo for membrane_test plugin");
+  }
 }
 
 membrane_test::Panel::Panel(QMainWindow* main_window,
@@ -20,9 +26,7 @@ membrane_test::Panel::Panel(QMainWindow* main_window,
     : Widgets::Panel(
           std::string(membrane_test::MODULE_NAME), main_window, ev_manager)
 {
-  setWhatsThis("Template Plugin");
-  //createGUI(membrane_test::get_default_vars(),
-            //{});  // this is required to create the GUI
+  setWhatsThis("Christini Lab Membrane Properties Probe");
   customizeGUI();
 }
 
@@ -31,23 +35,117 @@ membrane_test::Component::Component(Widgets::Plugin* hplugin)
                          std::string(membrane_test::MODULE_NAME),
                          membrane_test::get_default_channels(),
                          membrane_test::get_default_vars())
+    , fifo(dynamic_cast<membrane_test::Plugin*>(getHostPlugin())->getFifo())
 {
+  // The buffer will start with enough memory to handle 10000 values per
+  // pulse width. In the event that the update frequency causes the
+  // calculations to exceed this number we'll just have to bite the
+  // bullet and potentially allocate additional memory when push_back is called.
+  // This however should only happen once, and consecutive calls to execute
+  // would not be a problem.... Unless you increase the frequency again.
+  mp_data.reserve(10000);
 }
 
-int membrane_test::Component::MP_Calculate()
+void membrane_test::Component::execute()
 {
-  double Vpp = pulseAmp;
-  size_t data_size = cnt;
-  if (data_size != mp_data.size()) {  // Check to make sure data size is correct
-    return 1;
+  switch (this->getState()) {
+    case RT::State::EXEC: {
+      const int64_t current_time_ns =
+          RT::OS::getTime() - this->measure_start_ns;
+      // We only measure current from T/4 to T/2 during step on and
+      // from 3T/4 to T during step off. This can be represented with
+      // sections 1 and 3
+      const int64_t period_section = (current_time_ns / (mp_period / 4)) % 4;
+      switch (period_section) {
+        case 0:
+        case 1:
+          writeoutput(0, (holdingVoltage + pulseAmp) * 1e-3);
+          break;
+        case 3:
+        case 4:
+          writeoutput(0, holdingVoltage * 1e-3);
+          break;
+        default:
+          ERROR_MSG(
+              "membrane_test::Component::execute : Impossible period section "
+              "calculated");
+          break;
+      }
+      const bool mp_collectData = acquire_data
+          && (mp_stepsCount < mp_stepsTotal
+              || mp_mode == mp_mode_t::CONTINUOUS);
+      // Is this the first sample after a wave period? If so we should send data
+      // and reset the current measurements to 0
+      if (mp_collectData && (current_time_ns % pulseWidth) <= mp_period) {
+        fifo->writeRT(mp_data.data(), sizeof(double) * mp_data.size());
+        mp_data.clear();
+      }
+      if (mp_collectData) {
+        // This try-catch block guarantees that our execution function does not
+        // bring down the whole system because of unreasonable configuration.
+        // It is better then crashing.
+        try {
+          mp_data.push_back(readinput(0));
+        } catch (const std::bad_alloc& e) {
+          ERROR_MSG(
+              "membrane_test::Component::execute : Memory allocation failed "
+              "after period change!");
+          ERROR_MSG("Consider decreasing pulseWidth or increasing RT period");
+          // Make sure we don't keep throwing.
+          mp_data.clear();
+          mp_stepsTotal = 0;
+          acquire_data = false;
+        }
+      }
+      break;
+    }
+    case RT::State::INIT:
+    case RT::State::MODIFY:
+      pulseAmp = getValue<double>(PULSE_AMP);
+      holdingVoltage = getValue<double>(HOLDING_VOLTAGE);
+      pulseWidth = getValue<int64_t>(PULSE_WIDTH);
+      mp_stepsTotal = getValue<uint64_t>(TARGET_PULSE_COUNT);
+      mp_stepsCount = 0;
+      acquire_data = getValue<uint64_t>(ACQUIRE_ON) == 1;
+      mp_mode = static_cast<mp_mode_t>(getValue<uint64_t>(MP_MODE));
+      mp_period = RT::OS::getPeriod();
+      setState(RT::State::EXEC);
+      break;
+    case RT::State::PERIOD:
+      this->mp_period = RT::OS::getPeriod();
+      setState(RT::State::EXEC);
+      break;
+    case RT::State::PAUSE:
+      break;
+    case RT::State::UNPAUSE:
+      this->measure_start_ns = RT::OS::getTime();
+      setState(RT::State::EXEC);
+      break;
+    default:
+      break;
+  }
+}
+
+void membrane_test::Panel::MP_Calculate()
+{
+  double Vpp = 0.0;
+  if (mtUi.holdingVoltage1_button->isChecked()) {
+    Vpp = mtUi.holdingVoltage1_spinBox->value();
+  } else if (mtUi.holdingVoltage2_button->isChecked()) {
+    Vpp = mtUi.holdingVoltage2_spinBox->value();
+  } else {
+    Vpp = mtUi.holdingVoltage3_spinBox->value();
   }
 
   // Taken from electrophys_plugin, written by Jonathan Bettencourt
   // In short, uses area under capacitive transient to calculate Cm by using
   // exponential curve fitting
-  for (size_t i = 0; i < data_size; ++i) {
-    mp_data.at(i) /= mp_stepsTotal;
-  }
+  const size_t data_size = mp_data.size();
+  uint64_t mp_stepsTotal = mtUi.mp_updatePeriod_spinBox->value();
+  // Average has been taken before calling this function
+  // for (size_t i = 0; i < data_size; ++i) {
+  //  mp_data.at(i) /= mp_stepsTotal;
+  //}
 
   double I1 = 0.0;
   for (auto i = static_cast<size_t>(round(data_size / 2 - ceil(data_size / 8)));
@@ -215,8 +313,6 @@ int membrane_test::Component::MP_Calculate()
   ra = round(ra * 1e-6 * 10) / 10;
   rm = round(rm * 1e-6 * 10) / 10;
   cm = round(cm * 1e12 * 10) / 10;
-
-  return 0;
 }
 
 void membrane_test::Panel::customizeGUI()
@@ -238,14 +334,13 @@ void membrane_test::Panel::customizeGUI()
   // Set timers
   rs_timer = new QTimer(this);
   rs_timer->setSingleShot(true);
-  mp_timer = new QTimer(this);
-
-  omega = QChar(0x3A9);  // Greek letter omega for resistance
 
   // Connect mtUi elements to slot functions
   // Resistance measurement
-  QObject::connect(
-      mtUi.pulse_button, SIGNAL(toggled(bool)), this, SLOT(toggle_pulse(bool)));
+  QObject::connect(mtUi.pulse_button,
+                   &QAbstractButton::toggled,
+                   this,
+                   &membrane_test::Panel::toggle_pulse);
   QObject::connect(
       mtUi.holdingVoltage1_button, SIGNAL(clicked()), this, SLOT(modify()));
   QObject::connect(
@@ -298,75 +393,62 @@ void membrane_test::Panel::customizeGUI()
       timer, SIGNAL(timeout(void)), this, SLOT(update_rm_display(void)));
   QObject::connect(
       rs_timer, SIGNAL(timeout(void)), this, SLOT(resize_rm_text(void)));
-  QObject::connect(
-      mp_timer, SIGNAL(timeout(void)), this, SLOT(update_mp_display(void)));
+  // QObject::connect(
+  //     mp_timer, SIGNAL(timeout(void)), this, SLOT(update_mp_display(void)));
 
-  this->show();
-  this->adjustSize();
+  resizeMe();
 }
 
 void membrane_test::Component::initialize()
 {
   // Resistance measurement variables
   holdingVoltage = 0;
-  holdingVoltageOption_1 = 0;
-  holdingVoltageOption_2 = -40;
-  holdingVoltageOption_3 = -80;
   pulseAmp = 10;
   pulseWidth = 20;
-  resistance = 0;
-
-  // Number of loops for complete step (2x step width)
-  cnt = static_cast<int64_t>((2.0 * pulseWidth) * 1e-3)
-      / (RT::OS::getPeriod() * 1e-9);
 
   // Membrane properties variables
-  mp_on = false;
-  mp_dataFinished = false;
-  mp_collectData = false;
-  mp_updatePeriod = 30;
   mp_stepsTotal = 500;
-  mp_stepsDone = 0;
-  mp_mode = CONTINUOUS;
-  cm = 0;
-  ra = 0;
-  rm = 0;
+  mp_mode = mp_mode_t::SINGLE;
 }
 
 // Update parameter values based on Ui
-// TODO: Properlyimplement the variable update logic
 void membrane_test::Panel::modify()
 {
+  Widgets::Plugin* hplugin = getHostPlugin();
   RT::State::state_t state = getHostPlugin()->getComponentState();
   // Make sure real-time thread is not in the middle of execution
   getHostPlugin()->setComponentState(RT::State::PAUSE);
 
-  // Restart data collection if parameters are changed
-  // mp_collectData = false;
-
   // Resistance measurement
+  if (mtUi.holdingVoltage1_button->isChecked()) {
+    hplugin->setComponentParameter<double>(
+        PARAMETER::HOLDING_VOLTAGE, mtUi.holdingVoltage1_spinBox->value());
+  } else if (mtUi.holdingVoltage2_button->isChecked()) {
+    hplugin->setComponentParameter<double>(
+        PARAMETER::HOLDING_VOLTAGE, mtUi.holdingVoltage2_spinBox->value());
+  } else {
+    hplugin->setComponentParameter<double>(
+        PARAMETER::HOLDING_VOLTAGE, mtUi.holdingVoltage3_spinBox->value());
+  }
 
-  double holdingVoltage = 0.0;
-  if (mtUi.holdingVoltage1_button->isChecked())
-    holdingVoltage = mtUi.holdingVoltage1_spinBox->value();
-  else if (mtUi.holdingVoltage2_button->isChecked())
-    holdingVoltage = mtUi.holdingVoltage2_spinBox->value();
-  else
-    holdingVoltage = mtUi.holdingVoltage3_spinBox->value();
-
-  double pulseAmp = mtUi.pulseAmp_spinBox->value();
-  double pulseWidth = mtUi.pulseWidth_spinBox->value();
-  int cnt = (2.0 * pulseWidth * 1e-3) / (RT::OS::getPeriod() * 1e-9);
+  hplugin->setComponentParameter<double>(PARAMETER::PULSE_AMP,
+                                         mtUi.pulseAmp_spinBox->value());
+  hplugin->setComponentParameter<uint64_t>(PARAMETER::PULSE_WIDTH,
+                                           mtUi.pulseWidth_spinBox->value());
+  const uint64_t mp_stepsTotal = mtUi.mp_steps_spinBox->value();
+  hplugin->setComponentParameter<uint64_t>(PARAMETER::TARGET_PULSE_COUNT,
+                                           mp_stepsTotal);
 
   // Membrane properties
-  int mp_stepsTotal = mtUi.mp_steps_spinBox->value();
-  auto mp_mode = static_cast<mp_mode_t>(mtUi.mp_mode_comboBox->currentIndex());
+  const auto mp_mode =
+      static_cast<mp_mode_t>(mtUi.mp_mode_comboBox->currentIndex());
 
   // Set update period minimum based on number of steps to be averaged
-  int min_updatePeriod =
-      static_cast<int>(ceil(mp_stepsTotal * pulseWidth / 1e3));
+
+  min_updatePeriod = static_cast<int>(
+      ceil(mp_stepsTotal * mtUi.pulseWidth_spinBox->value() / 1e3));
   mtUi.mp_updatePeriod_spinBox->setMinimum(std::max(1, min_updatePeriod));
-  int64_t mp_updatePeriod = mtUi.mp_updatePeriod_spinBox->value();
+  mp_updatePeriod = mtUi.mp_updatePeriod_spinBox->value();
 
   getHostPlugin()->setComponentState(state);
 }
@@ -374,75 +456,113 @@ void membrane_test::Panel::modify()
 // Toggle slot functions
 void membrane_test::Panel::toggle_pulse(bool on)
 {
-  /*
-  setActive(on);
-  if (!on) {
-    if (mp_timer->isActive())  // Pause timer to prevent display updates
-      mp_timer->stop();
-    output(0) = 0;
-  } else if (mp_on)
-    // Start timer, convert s to ms
-    mp_timer->start(mp_updatePeriod / 1e3);
-  */
-  getHostPlugin()->setComponentState(RT::State::PAUSE);
+  on ? rs_timer->start(mp_updatePeriod * 1000) : rs_timer->stop();
+  getHostPlugin()->setComponentState(on ? RT::State::UNPAUSE
+                                        : RT::State::PAUSE);
 }
 
 void membrane_test::Panel::toggle_mp_acquire(bool on)
 {
-  /*
-  if (on) {
-    mp_collectData = false;
-    mp_dataFinished = false;
-    mp_on = true;
-    // Start timer, convert s to ms
-    mp_timer->start(mp_updatePeriod / 1e3);
-  } else {
-    if (mp_timer->isActive())
-      mp_timer->stop();
-    mp_on = false;
-  }
-*/
+  Widgets::Plugin* hplugin = getHostPlugin();
+  const uint64_t acq = on ? 1UL : 0UL;
+  hplugin->setComponentParameter(ACQUIRE_ON, acq);
 }
 
 // Update slot functions
 // Resistance measurement value
-// TODO: implement display update using rt pipe, which is faster
 void membrane_test::Panel::update_rm_display()
 {
-  /*
-  if (!getActive())
+  if (getHostPlugin()->getComponentState() != RT::State::EXEC) {
     return;  // Return if pulse is not on
+  }
+  RT::OS::Fifo* fifo =
+      dynamic_cast<membrane_test::Plugin*>(getHostPlugin())->getFifo();
+  size_t num_bytes_read = fifo->read(
+      mp_data.data(), sizeof(double) * mp_data.size());
+  if (num_bytes_read == 0) {
+    return;
+  }
+  if (mp_data.size() == num_bytes_read / sizeof(double)) {
+    double value = 0.0;
+    while (fifo->read(&value, sizeof(double)) > 0) {
+      mp_data.push_back(value);
+    }
+  }
 
+  // Calcualte the running average
+  const int mp_stepsTotal = mtUi.mp_updatePeriod_spinBox->value();
+  const size_t data_size = mp_data.size();
+  ++pulse_count;
+  if (mp_data_average.size() == 0 || pulse_count <= 1) {
+    mp_data_average.resize(data_size);
+    std::copy(mp_data.begin(), mp_data.end(), mp_data_average.begin());
+  } else {
+    for (auto indx = 0; indx < std::min(data_size, mp_data_average.size());
+         ++indx)
+    {
+      // calculate average
+      mp_data_average.at(indx) =
+          (mp_data_average.at(indx) * (pulse_count - 1) + mp_data.at(indx))
+          / pulse_count;
+    }
+  }
+
+  // Calculate currents and dI
+  double I_1 = 0.0;
+  for (auto i = static_cast<size_t>(round(data_size / 2 - ceil(data_size / 8)));
+       i < data_size / 2;
+       ++i)
+  {
+    I_1 += mp_data.at(i);
+  }
+  I_1 /= ceil(data_size / 8);
+
+  double I_2 = 0.0;
+  for (auto i = static_cast<size_t>(round(data_size - ceil(data_size / 8)));
+       i < data_size;
+       ++i)
+  {
+    I_2 += mp_data.at(i);
+  }
+  I_2 /= ceil(data_size / 8);
+
+  dI = (I_1 - I_2);
+
+  const double pulseAmp = mtUi.pulseAmp_spinBox->value();
   double R = fabs((pulseAmp * 1e-3) / dI);  // Resistance calculation
   size_t exp = 0;  // Exponent of resistance
 
-  if (R != INFINITY)
+  if (R != INFINITY) {
     while (R >= 1e3) {
       R *= 1e-3;  // Reduce R by an order of magnitude
       exp++;  // Increase exponent counter
     }
+  }
 
   QString RString;
-  RString.sprintf("%7.5g", R);
+  QString::asprintf("%7.5g", R);
 
   // Choose appropriate suffic based on exponent
-  if (exp) {
-    if (exp == 1)
+  if (exp != 0) {
+    if (exp == 1) {
       RString.append(" K").append(omega);
-    else if (exp == 2)
+    } else if (exp == 2) {
       RString.append(" M").append(omega);
-    else if (exp == 3)
+    } else if (exp == 3) {
       RString.append(" G").append(omega);
 
-    else {
+    } else {
       QString suffic;
-      suffic.sprintf(" * 1e%lu", 3 * exp);
+      QString::asprintf(" * 1e%lu", 3 * exp);
     }
-  } else
+  } else {
     RString.append(" ").append(omega);
-
+  }
   mtUi.resistance_valueLabel->setText(RString);
-  */
+  if (pulse_count >= mtUi.mp_steps_spinBox->value()) {
+    MP_Calculate();
+    update_mp_display();
+  }
 }
 
 void membrane_test::Panel::resize_rm_text()
@@ -476,35 +596,15 @@ void membrane_test::Panel::resize_rm_text()
 }
 
 // Membrane property values
-// TODO: implement display update using rt pipe, which is faster
 void membrane_test::Panel::update_mp_display()
 {
-  /*
-  if (mp_dataFinished) {  // Data has been collected
-    int retval = MP_Calculate();
+  mtUi.cm_valueLabel->setText(QString::number(cm).append(" pF"));
+  mtUi.ra_valueLabel->setText(QString::number(ra).append(" M").append(omega));
+  mtUi.rm_valueLabel->setText(QString::number(rm).append(" M").append(omega));
 
-    if (retval) {  // Error
-      mtUi.cm_valueLabel->setText("Error");
-      mtUi.ra_valueLabel->setText("Error");
-      mtUi.rm_valueLabel->setText("Error");
-    } else {
-      mtUi.cm_valueLabel->setText(QString::number(cm).append(" pF"));
-      mtUi.ra_valueLabel->setText(
-          QString::number(ra).append(" M").append(omega));
-      mtUi.rm_valueLabel->setText(
-          QString::number(rm).append(" M").append(omega));
-    }
-
-    if (mp_mode == SINGLE) {
-      mtUi.mp_acquire_button->setChecked(false);
-      mp_timer->stop();
-    } else {  // Start next calculation
-      // Reset flags
-      mp_collectData = false;
-      mp_dataFinished = false;
-    }
+  if (mtUi.mp_mode_comboBox->currentIndex() == SINGLE) {
+    mtUi.mp_acquire_button->setChecked(false);
   }
-  */
 }
 
 // Event handling
@@ -521,74 +621,6 @@ void membrane_test::Plugin::receiveEvent(Event::Object* event)
       // Restart membrane properties data collection
       // if (mp_collectData)
       //   mp_collectData = false;
-    default:
-      break;
-  }
-}
-
-void membrane_test::Component::execute()
-{
-  // This is the real-time function that will be called
-  switch (this->getState()) {
-    case RT::State::EXEC:
-      // First section (voltage step on)
-      if (idx < (cnt / 2)) {
-        // Only 2nd half of current used for resistance measurement
-        if (idx >= (cnt / 4))
-          I_1 += readinput(0);  // Current during voltage on step
-
-        // Voltage step on, convert from mV to V
-        writeoutput(0, (holdingVoltage + pulseAmp) * 1e-3);
-      } else {  // Second section (voltage step off)
-        if (idx >= (3 * cnt) / 4)
-          I_2 += readinput(0);  // Current during voltage off step
-
-        // Voltage step off, convert from mV to V
-        writeoutput(0, (holdingVoltage) * 1e-3);
-      }
-
-      // All data during voltage on step is used for membrane properties
-      // calculation
-      if (mp_collectData) {
-        mp_data.at(idx) += readinput(0);
-      }
-
-      // Increment index, resetting to 0 when idx equals cnt
-      if ((++idx %= cnt) == 0) {
-        // Difference current between voltage on and off
-        dI = (I_1 - I_2) / (cnt / 4);
-        I_1 = I_2 = 0.0;  // Reset current
-
-        // If membrane properties calculation is on and calculation is not
-        // already happening
-        if (mp_on && !mp_dataFinished) {
-          // Flag check ensures data collection starts at the beginning of a
-          // voltage step
-          if (!mp_collectData) {
-            mp_stepsDone = 1;
-            mp_collectData = true;
-            // Reset membrane properties data
-            mp_data.clear();
-            mp_data.resize(cnt, 0);
-          }
-          // If the number of desired steps to average is reached
-          else if (++mp_stepsDone > mp_stepsTotal)
-          {
-            mp_dataFinished = true;
-          }
-        }
-      }
-      break;
-    case RT::State::INIT:
-      break;
-    case RT::State::MODIFY:
-      break;
-    case RT::State::PERIOD:
-      break;
-    case RT::State::PAUSE:
-      break;
-    case RT::State::UNPAUSE:
-      break;
     default:
       break;
   }

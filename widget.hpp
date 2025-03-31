@@ -1,6 +1,7 @@
 
 #include <string>
 
+#include <rtxi/fifo.hpp>
 #include <rtxi/widgets.hpp>
 
 #include "ui_Membrane_Test_MainWindow.h"
@@ -23,26 +24,46 @@ enum PARAMETER : Widgets::Variable::Id
   // set parameter ids here
   HOLDING_VOLTAGE = 0,
   PULSE_AMP,
-  PULSE_WIDTH
+  PULSE_WIDTH,
+  TARGET_PULSE_COUNT,
+  ACQUIRE_ON,
+  MP_MODE
 };
 
 inline std::vector<Widgets::Variable::Info> get_default_vars()
 {
-  return {{PARAMETER::HOLDING_VOLTAGE,
-           "Holding Voltage",
-           "Voltage level to hold for",
-           Widgets::Variable::INT_PARAMETER,
-           0.0},
-          {PARAMETER::PULSE_AMP,
-           "Pluse Amplifier",
-           "",
-           Widgets::Variable::DOUBLE_PARAMETER,
-           1.0},
-          {PARAMETER::PULSE_WIDTH,
-           "Pulse Width",
-           "",
-           Widgets::Variable::UINT_PARAMETER,
-           0.0}};
+  return {
+      {PARAMETER::HOLDING_VOLTAGE,
+       "Holding Voltage",
+       "Voltage (mV) level to hold for",
+       Widgets::Variable::INT_PARAMETER,
+       0.0},
+      {PARAMETER::PULSE_AMP,
+       "Pluse Amplitude",
+       "The apmplitude of the applied pulse",
+       Widgets::Variable::DOUBLE_PARAMETER,
+       10.0},
+      {PARAMETER::PULSE_WIDTH,
+       "Pulse Width",
+       "Width (ms) of the applied pulse",
+       Widgets::Variable::INT_PARAMETER,
+       20LL},
+      {PARAMETER::TARGET_PULSE_COUNT,
+       "Target Pulse Count",
+       "Number of pulses to average over for membrane property calculation",
+       Widgets::Variable::UINT_PARAMETER,
+       0UL},
+      {PARAMETER::ACQUIRE_ON,
+       "Acquire data state",
+       "1 to acquire membrane properties, 0 to not acquire membrane properties",
+       Widgets::Variable::UINT_PARAMETER,
+       0UL},
+      {PARAMETER::MP_MODE,
+       "Membrane Properties Mode",
+       "Mode for acquiring membrane properties. 0 for single "
+       "acquisition and 1 for continuous acquisition",
+       Widgets::Variable::UINT_PARAMETER,
+       0UL}};
 }
 
 inline std::vector<IO::channel_t> get_default_channels()
@@ -68,13 +89,26 @@ public slots:
   void modify() override;  // Update parameters
   void toggle_pulse(bool);  // Called when pulse button is pressed
   void toggle_mp_acquire(bool);  // Called when acquire button is pressed
+
+  // Calculate membrane property values
+  void MP_Calculate();
+
 private:
-  QWidget* mtWindow;
-  QMdiSubWindow* subWindow;
+  // We read current data from the realtime thread using this fifo
+  std::vector<double> mp_data;
+  std::vector<double> mp_data_average;
   Ui::Membrane_Test_UI mtUi;
-  QTimer* mp_timer;  // Membrane properties timer
-  QTimer* rs_timer;  // Resize timer
-  QChar omega;  // Greek letter omega for resistance
+  QWidget* mtWindow = nullptr;
+  QMdiSubWindow* subWindow = nullptr;
+  QTimer* rs_timer = nullptr;  // Resize timer
+  double cm = 0;
+  double ra = 0;
+  double rm = 0;
+  double dI = 0;
+  int mp_updatePeriod = 0;  // Period for calc of membrane properties (s)
+  int min_updatePeriod = 0;  // Minmum period for membrane property calc (s)
+  int pulse_count = 0;  // Number of pulses since last acquisition
+  const QChar omega = QChar(0x3A9);  // Greek letter omega for resistance
 };
 
 class Component : public Widgets::Component
@@ -83,38 +117,23 @@ public:
   explicit Component(Widgets::Plugin* hplugin);
   void execute() override;
   void initialize();
-  int MP_Calculate();  // Calculate membrane property values
 
 private:
+  std::vector<double> mp_data;
+  // We use this pipe/schannel to send data from the real time
+  // to the ui thread without incurring uneccessary latencies
+  RT::OS::Fifo* fifo = nullptr;
+
   // Resistance measurement variables
-  int holdingVoltage;
-  int holdingVoltageOption_1;
-  int holdingVoltageOption_2;
-  int holdingVoltageOption_3;
-  int pulseAmp;  // Amplitude of voltage pulse
-  int pulseWidth;  // Width of voltage pulse
-  double I_1;  // Current during positive pulse
-  double I_2;  // Current during negative pulse
-  double dI;  // Difference current
-  double resistance;  // Calculated membrane resistance
-
-  bool mp_on;
-  bool mp_collectData;
-  bool mp_dataFinished;
-  std::vector<double> mp_data;  // Vector holding current data
-  int mp_updatePeriod;  // Period at which calculation occurs
-  int mp_stepsTotal;  // Number of steps to be averaged
-  int mp_stepsDone;
-  double cm;
-  double ra;
-  double rm;
-  int idx;
-  int cnt;
-
-  mp_mode_t mp_mode;
-
-  // Additional functionality needed for RealTime computation is to be placed
-  // here
+  uint64_t mp_period = 0;  // Period at which calculation occurs
+  uint64_t mp_stepsCount = 0;
+  uint64_t mp_stepsTotal = 0;
+  int64_t pulseWidth = 0;  // Width of voltage pulse
+  int64_t measure_start_ns = 0;
+  double holdingVoltage = 0;
+  double pulseAmp = 0;  // Amplitude of voltage pulse
+  mp_mode_t mp_mode = SINGLE;
+  bool acquire_data = false;
 };
 
 class Plugin : public Widgets::Plugin
@@ -122,6 +141,10 @@ class Plugin : public Widgets::Plugin
 public:
   explicit Plugin(Event::Manager* ev_manager);
   void receiveEvent(Event::Object* event) override;
+  RT::OS::Fifo* getFifo() { return Fifo.get(); }
+
+private:
+  std::unique_ptr<RT::OS::Fifo> Fifo;
 };
 
 }  // namespace membrane_test
