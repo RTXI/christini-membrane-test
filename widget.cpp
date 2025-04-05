@@ -27,6 +27,7 @@ membrane_test::Panel::Panel(QMainWindow* main_window,
           std::string(membrane_test::MODULE_NAME), main_window, ev_manager)
 {
   setWhatsThis("Christini Lab Membrane Properties Probe");
+  mp_data.resize(10000, 0.0);
   customizeGUI();
 }
 
@@ -53,6 +54,7 @@ void membrane_test::Component::execute()
       const int64_t current_time_ns =
           RT::OS::getTime() - this->measure_start_ns;
       const int period_section = (current_time_ns / (pulseWidth * 1000000)) % 2;
+      // generate the square wave
       switch (period_section) {
         case 0:
           writeoutput(0, (holdingVoltage + pulseAmp) * 1e-3);
@@ -63,32 +65,26 @@ void membrane_test::Component::execute()
         default:
           break;
       }
-      const bool mp_collectData = acquire_data
-          && (mp_stepsCount < mp_stepsTotal
-              || mp_mode == mp_mode_t::CONTINUOUS);
-      // Is this the first sample after a wave period? If so we should send data
-      // and reset the current measurements to 0
-      if (mp_collectData && (current_time_ns % pulseWidth) <= mp_period) {
+      // Check if a pulseWidth cycle has occurred
+      if (current_time_ns % (pulseWidth * 1000000 * 2) <= mp_period) {
         fifo->writeRT(mp_data.data(), sizeof(double) * mp_data.size());
         mp_data.clear();
       }
-      if (mp_collectData) {
-        // This try-catch block guarantees that our execution function does not
-        // bring down the whole system because of unreasonable configuration.
-        // It is better then crashing. Not to worry the data is preallocated and
-        // it is unlikely that this would allocate. But if it does and fails
-        // won't crash.
-        try {
-          mp_data.push_back(readinput(0));
-        } catch (const std::bad_alloc& e) {
-          ERROR_MSG(
-              "membrane_test::Component::execute : Memory allocation failed "
-              "after period change!");
-          ERROR_MSG("Consider decreasing pulseWidth or increasing RT period");
-          // Make sure we don't keep throwing.
-          mp_data.clear();
-          acquire_data = false;
-        }
+      // This try-catch block guarantees that our execution function does not
+      // bring down the whole system because of unreasonable configuration.
+      // It is better then crashing. Not to worry the data is preallocated and
+      // it is unlikely that this would allocate. But if it does and fails
+      // won't crash.
+      try {
+        mp_data.push_back(readinput(0));
+      } catch (const std::bad_alloc& e) {
+        ERROR_MSG(
+            "membrane_test::Component::execute : Memory allocation failed "
+            "after period change!");
+        ERROR_MSG("Consider decreasing pulseWidth or increasing RT period");
+        // Make sure we don't keep throwing.
+        mp_data.clear();
+        acquire_data = false;
       }
       break;
     }
@@ -107,10 +103,9 @@ void membrane_test::Component::execute()
       pulseAmp = getValue<double>(PULSE_AMP);
       holdingVoltage = getValue<double>(HOLDING_VOLTAGE);
       pulseWidth = getValue<int64_t>(PULSE_WIDTH);
-      std::cout << pulseWidth << std::endl;
       mp_stepsTotal = getValue<uint64_t>(TARGET_PULSE_COUNT);
       mp_stepsCount = 0;
-      acquire_data = getValue<uint64_t>(ACQUIRE_ON) == 1;
+      acquire_data = getValue<uint64_t>(ACQUIRE_ON) == 1UL;
       mp_mode = static_cast<mp_mode_t>(getValue<uint64_t>(MP_MODE));
       mp_period = RT::OS::getPeriod();
       setState(RT::State::EXEC);
@@ -120,6 +115,7 @@ void membrane_test::Component::execute()
       setState(RT::State::EXEC);
       break;
     case RT::State::PAUSE:
+      writeoutput(0, 0);
       break;
     case RT::State::UNPAUSE:
       this->measure_start_ns = RT::OS::getTime();
@@ -177,13 +173,9 @@ void membrane_test::Panel::MP_Calculate()
   {
     Q11 = 0.0;
     for (size_t i = 0; i < data_size / 2 - 1; ++i) {
-      Q11 += dt * 1e-3 * (mp_data.at(i) + mp_data[i + 1] - 2 * I1) / 2;
+      Q11 += dt * 1e-3 * (mp_data.at(i) + mp_data.at(i + 1) - 2 * I1) / 2;
     }
     Q11 = fabs(Q11);
-
-    size_t xi = 0;
-    for (; mp_data.at(xi) <= mp_data.at(xi + 1); ++xi) {
-    }
 
     double sy = 0.0;
     double Y = mp_data.at(xi);
@@ -235,19 +227,19 @@ void membrane_test::Panel::MP_Calculate()
 
     gsl_linalg_SV_decomp(&a.matrix, &b.matrix, &c.vector, &d.vector);
     gsl_linalg_SV_solve(&a.matrix, &b.matrix, &c.vector, &e.vector, &d.vector);
-    tau1 = fabs(1.0 / x[1]);
+    tau1 = fabs(1.0 / x.at(1));
   }
 
   double Q12 = NAN;
   double tau2 = NAN;
   {
     Q12 = 0.0;
-    for (size_t i = data_size / 2; i < data_size; ++i)
-      Q12 += dt * 1e-3 * (mp_data.at(i) + mp_data[i + 1] - 2 * I2) / 2;
+    for (size_t i = data_size / 2; i < data_size - 1; ++i)
+      Q12 += dt * 1e-3 * (mp_data.at(i) + mp_data.at(i + 1) - 2 * I2) / 2;
     Q12 = fabs(Q12);
 
     size_t xi = data_size / 2;
-    for (; mp_data.at(xi) >= mp_data[xi + 1]; ++xi) {
+    for (; mp_data.at(xi) >= mp_data.at(xi + 1); ++xi) {
       ;
     }
 
@@ -261,7 +253,7 @@ void membrane_test::Panel::MP_Calculate()
     double tt = 0.0;
     double Yt = 0.0;
     for (size_t i = xi + 1; i < data_size; ++i) {
-      sy += dt * 1e-3 * (mp_data[i - 1] + mp_data.at(i)) / 2;
+      sy += dt * 1e-3 * (mp_data.at(i - 1) + mp_data.at(i)) / 2;
 
       Y += mp_data.at(i);
       SY += sy;
@@ -301,7 +293,7 @@ void membrane_test::Panel::MP_Calculate()
 
     gsl_linalg_SV_decomp(&a.matrix, &b.matrix, &c.vector, &d.vector);
     gsl_linalg_SV_solve(&a.matrix, &b.matrix, &c.vector, &e.vector, &d.vector);
-    tau2 = fabs(1.0 / x[1]);
+    tau2 = fabs(1.0 / x.at(1));
   }
 
   double tau = (tau1 + tau2) / 2.0;
@@ -331,13 +323,8 @@ void membrane_test::Panel::customizeGUI()
   setLayout(layout);
   layout->addWidget(mtWindow);
 
-  // Set Ui refresh rate
-  auto* timer = new QTimer(this);
-  timer->start(100);  // 100ms refresh rate
-
   // Set timers
   rs_timer = new QTimer(this);
-  rs_timer->setSingleShot(true);
   mp_timer = new QTimer(this);
 
   // Connect mtUi elements to slot functions
@@ -361,7 +348,7 @@ void membrane_test::Panel::customizeGUI()
   QObject::connect(mtUi.holdingVoltage1_spinBox,
                    QOverload<int>::of(&QSpinBox::valueChanged),
                    this,
-                   [=](int) { this->modify(); });
+                   &membrane_test::Panel::modify);
   QObject::connect(mtUi.holdingVoltage2_spinBox,
                    QOverload<int>::of(&QSpinBox::valueChanged),
                    this,
@@ -406,19 +393,18 @@ void membrane_test::Panel::customizeGUI()
                    mtUi.mp_updatePeriod_spinBox,
                    &membrane_test::Panel::setDisabled);
   // Display updates
-  QObject::connect(
-      timer, &QTimer::timeout, this, &membrane_test::Panel::update_rm_display);
+  QObject::connect(rs_timer,
+                   &QTimer::timeout,
+                   this,
+                   &membrane_test::Panel::update_rm_display);
   QObject::connect(
       rs_timer, &QTimer::timeout, this, &membrane_test::Panel::resize_rm_text);
   QObject::connect(mp_timer,
                    &QTimer::timeout,
                    this,
-                   &membrane_test::Panel::update_mp_display);
-  QObject::connect(mp_timer,
-                   &QTimer::timeout,
-                   this,
-                   &membrane_test::Panel::update_panel_values);
+                   &membrane_test::Panel::update_pulse_button);
   mp_timer->start(1000);
+  rs_timer->start(100);
   resizeMe();
 }
 
@@ -438,8 +424,9 @@ void membrane_test::Component::initialize()
 void membrane_test::Panel::modify()
 {
   Widgets::Plugin* hplugin = getHostPlugin();
+  const RT::State::state_t prev_state = hplugin->getComponentState();
   // Make sure real-time thread is not in the middle of execution
-  getHostPlugin()->setComponentState(RT::State::PAUSE);
+  hplugin->setComponentState(RT::State::PAUSE);
 
   // Resistance measurement
   if (mtUi.holdingVoltage1_button->isChecked()) {
@@ -461,6 +448,8 @@ void membrane_test::Panel::modify()
   hplugin->setComponentParameter<uint64_t>(PARAMETER::TARGET_PULSE_COUNT,
                                            mp_stepsTotal);
 
+  hplugin->setComponentParameter(ACQUIRE_ON,
+                                 mtUi.mp_acquire_button->isDown() ? 1UL : 0UL);
   // Membrane properties
   const auto mp_mode =
       static_cast<mp_mode_t>(mtUi.mp_mode_comboBox->currentIndex());
@@ -472,7 +461,8 @@ void membrane_test::Panel::modify()
   mtUi.mp_updatePeriod_spinBox->setMinimum(std::max(1, min_updatePeriod));
   mp_updatePeriod = mtUi.mp_updatePeriod_spinBox->value();
 
-  getHostPlugin()->setComponentState(RT::State::MODIFY);
+  hplugin->setComponentState(RT::State::MODIFY);
+  hplugin->setComponentState(prev_state);
 }
 
 // Toggle slot functions
@@ -488,6 +478,7 @@ void membrane_test::Panel::toggle_mp_acquire(bool on)
   Widgets::Plugin* hplugin = getHostPlugin();
   const uint64_t acq = on ? 1UL : 0UL;
   hplugin->setComponentParameter(ACQUIRE_ON, acq);
+  hplugin->setComponentState(RT::State::MODIFY);
 }
 
 // Update slot functions
@@ -499,9 +490,9 @@ void membrane_test::Panel::update_rm_display()
   }
   RT::OS::Fifo* fifo =
       dynamic_cast<membrane_test::Plugin*>(getHostPlugin())->getFifo();
-  size_t num_bytes_read =
+  int64_t num_bytes_read =
       fifo->read(mp_data.data(), sizeof(double) * mp_data.size());
-  if (num_bytes_read == 0) {
+  if (num_bytes_read <= 0) {
     return;
   }
   if (mp_data.size() == num_bytes_read / sizeof(double)) {
@@ -511,25 +502,8 @@ void membrane_test::Panel::update_rm_display()
     }
   }
 
-  // Calcualte the running average
-  const int mp_stepsTotal = mtUi.mp_updatePeriod_spinBox->value();
-  const size_t data_size = mp_data.size();
-  ++pulse_count;
-  if (mp_data_average.size() == 0 || pulse_count <= 1) {
-    mp_data_average.resize(data_size);
-    std::copy(mp_data.begin(), mp_data.end(), mp_data_average.begin());
-  } else {
-    for (auto indx = 0; indx < std::min(data_size, mp_data_average.size());
-         ++indx)
-    {
-      // calculate average
-      mp_data_average.at(indx) =
-          (mp_data_average.at(indx) * (pulse_count - 1) + mp_data.at(indx))
-          / pulse_count;
-    }
-  }
-
   // Calculate currents and dI
+  const size_t data_size = mp_data.size();
   double I_1 = 0.0;
   for (auto i = static_cast<size_t>(round(data_size / 2 - ceil(data_size / 8)));
        i < data_size / 2;
@@ -581,7 +555,28 @@ void membrane_test::Panel::update_rm_display()
     RString.append(" ").append(omega);
   }
   mtUi.resistance_valueLabel->setText(RString);
-  if (pulse_count >= mtUi.mp_steps_spinBox->value()) {
+
+  // Calcualte the running average
+  const int mp_stepsTotal = mtUi.mp_updatePeriod_spinBox->value();
+  ++pulse_count;
+  if (mp_data_average.size() == 0 || pulse_count <= 1) {
+    mp_data_average.resize(data_size);
+    std::copy(mp_data.begin(), mp_data.end(), mp_data_average.begin());
+  } else {
+    if (mp_data.size() > mp_data_average.size()) {
+      mp_data_average.resize(data_size);
+    }
+    for (auto indx = 0; indx < data_size; ++indx) {
+      // calculate average
+      mp_data_average.at(indx) =
+          (mp_data_average.at(indx) * (pulse_count - 1) + mp_data.at(indx))
+          / pulse_count;
+    }
+  }
+  this->mtUi.mp_acquire_button->isDown();
+  if (this->mtUi.mp_acquire_button->isDown()
+      && pulse_count >= mtUi.mp_steps_spinBox->value())
+  {
     MP_Calculate();
     update_mp_display();
   }
@@ -617,14 +612,14 @@ void membrane_test::Panel::resize_rm_text()
   mtUi.resistance_valueLabel->setFont(labelFont);
 }
 
-void membrane_test::Panel::update_panel_values()
+void membrane_test::Panel::update_pulse_button()
 {
   Widgets::Plugin* hplugin = getHostPlugin();
   // Make sure real-time thread is not in the middle of execution
   const bool executing = RT::State::EXEC == hplugin->getComponentState();
-  const bool acquire_on = hplugin->getComponentUIntParameter(ACQUIRE_ON) == 1;
-  this->mtUi.mp_acquire_button->setDown(acquire_on);
-  this->mtUi.pulse_button->setDown(executing);
+  if (mtUi.pulse_button->isDown() != executing) {
+    this->mtUi.pulse_button->setChecked(executing);
+  }
 }
 
 // Membrane property values

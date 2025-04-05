@@ -85,7 +85,7 @@ public:
 public slots:
   void update_rm_display();  // Refresh resistance measurement display
   void resize_rm_text();  // Resizes resistance measurement font
-  void update_panel_values();
+  void update_pulse_button(); // synchronizes panel with component state
   void update_mp_display();  // Refresh membrane property values
   void modify() override;  // Update parameters
   void toggle_pulse(bool);  // Called when pulse button is pressed
@@ -127,9 +127,9 @@ private:
   RT::OS::Fifo* fifo = nullptr;
 
   // Resistance measurement variables
-  uint64_t mp_period = 0;  // Period at which calculation occurs
   uint64_t mp_stepsCount = 0;
   uint64_t mp_stepsTotal = 0;
+  int64_t mp_period = 0;  // Period at which calculation occurs
   int64_t pulseWidth = 0;  // Width of voltage pulse
   int64_t measure_start_ns = 0;
   double holdingVoltage = 0;
