@@ -87,7 +87,6 @@ void membrane_test::Component::execute()
           ERROR_MSG("Consider decreasing pulseWidth or increasing RT period");
           // Make sure we don't keep throwing.
           mp_data.clear();
-          mp_stepsTotal = 0;
           acquire_data = false;
         }
       }
@@ -339,6 +338,7 @@ void membrane_test::Panel::customizeGUI()
   // Set timers
   rs_timer = new QTimer(this);
   rs_timer->setSingleShot(true);
+  mp_timer = new QTimer(this);
 
   // Connect mtUi elements to slot functions
   // Resistance measurement
@@ -346,61 +346,79 @@ void membrane_test::Panel::customizeGUI()
                    &QAbstractButton::toggled,
                    this,
                    &membrane_test::Panel::toggle_pulse);
-  QObject::connect(
-      mtUi.holdingVoltage1_button, SIGNAL(clicked()), this, SLOT(modify()));
-  QObject::connect(
-      mtUi.holdingVoltage2_button, SIGNAL(clicked()), this, SLOT(modify()));
-  QObject::connect(
-      mtUi.holdingVoltage3_button, SIGNAL(clicked()), this, SLOT(modify()));
+  QObject::connect(mtUi.holdingVoltage1_button,
+                   &QRadioButton::clicked,
+                   this,
+                   &membrane_test::Panel::modify);
+  QObject::connect(mtUi.holdingVoltage2_button,
+                   &QRadioButton::clicked,
+                   this,
+                   &membrane_test::Panel::modify);
+  QObject::connect(mtUi.holdingVoltage3_button,
+                   &QRadioButton::clicked,
+                   this,
+                   &membrane_test::Panel::modify);
   QObject::connect(mtUi.holdingVoltage1_spinBox,
-                   SIGNAL(valueChanged(int)),
+                   QOverload<int>::of(&QSpinBox::valueChanged),
                    this,
-                   SLOT(modify()));
+                   [=](int) { this->modify(); });
   QObject::connect(mtUi.holdingVoltage2_spinBox,
-                   SIGNAL(valueChanged(int)),
+                   QOverload<int>::of(&QSpinBox::valueChanged),
                    this,
-                   SLOT(modify()));
+                   &membrane_test::Panel::modify);
   QObject::connect(mtUi.holdingVoltage3_spinBox,
-                   SIGNAL(valueChanged(int)),
+                   QOverload<int>::of(&QSpinBox::valueChanged),
                    this,
-                   SLOT(modify()));
-  QObject::connect(
-      mtUi.pulseAmp_spinBox, SIGNAL(valueChanged(int)), this, SLOT(modify()));
-  QObject::connect(
-      mtUi.pulseWidth_spinBox, SIGNAL(valueChanged(int)), this, SLOT(modify()));
+                   &membrane_test::Panel::modify);
+  QObject::connect(mtUi.pulseAmp_spinBox,
+                   QOverload<int>::of(&QSpinBox::valueChanged),
+                   this,
+                   &membrane_test::Panel::modify);
+  QObject::connect(mtUi.pulseWidth_spinBox,
+                   QOverload<int>::of(&QSpinBox::valueChanged),
+                   this,
+                   &membrane_test::Panel::modify);
   // Membrane properties
   QObject::connect(mtUi.mp_acquire_button,
-                   SIGNAL(toggled(bool)),
+                   &QPushButton::toggled,
                    this,
-                   SLOT(toggle_mp_acquire(bool)));
+                   &membrane_test::Panel::toggle_mp_acquire);
   QObject::connect(mtUi.mp_updatePeriod_spinBox,
-                   SIGNAL(valueChanged(int)),
+                   QOverload<int>::of(&QSpinBox::valueChanged),
                    this,
-                   SLOT(modify()));
-  QObject::connect(
-      mtUi.mp_steps_spinBox, SIGNAL(valueChanged(int)), this, SLOT(modify()));
+                   &membrane_test::Panel::modify);
+  QObject::connect(mtUi.mp_steps_spinBox,
+                   QOverload<int>::of(&QSpinBox::valueChanged),
+                   this,
+                   &membrane_test::Panel::modify);
   QObject::connect(mtUi.mp_mode_comboBox,
-                   SIGNAL(currentIndexChanged(int)),
+                   QOverload<int>::of(&QComboBox::currentIndexChanged),
                    this,
-                   SLOT(modify()));
+                   &membrane_test::Panel::modify);
   // Acquire button is only enabled during pulse
   QObject::connect(mtUi.pulse_button,
-                   SIGNAL(toggled(bool)),
+                   &QPushButton::toggled,
                    mtUi.mp_acquire_button,
-                   SLOT(setEnabled(bool)));
+                   &membrane_test::Panel::setEnabled);
   // Update rate is only enabled when membrane property calculation is off
   QObject::connect(mtUi.mp_acquire_button,
-                   SIGNAL(toggled(bool)),
+                   &QPushButton::toggled,
                    mtUi.mp_updatePeriod_spinBox,
-                   SLOT(setDisabled(bool)));
+                   &membrane_test::Panel::setDisabled);
   // Display updates
   QObject::connect(
-      timer, SIGNAL(timeout(void)), this, SLOT(update_rm_display(void)));
+      timer, &QTimer::timeout, this, &membrane_test::Panel::update_rm_display);
   QObject::connect(
-      rs_timer, SIGNAL(timeout(void)), this, SLOT(resize_rm_text(void)));
-  // QObject::connect(
-  //     mp_timer, SIGNAL(timeout(void)), this, SLOT(update_mp_display(void)));
-
+      rs_timer, &QTimer::timeout, this, &membrane_test::Panel::resize_rm_text);
+  QObject::connect(mp_timer,
+                   &QTimer::timeout,
+                   this,
+                   &membrane_test::Panel::update_mp_display);
+  QObject::connect(mp_timer,
+                   &QTimer::timeout,
+                   this,
+                   &membrane_test::Panel::update_panel_values);
+  mp_timer->start(1000);
   resizeMe();
 }
 
@@ -599,6 +617,16 @@ void membrane_test::Panel::resize_rm_text()
   mtUi.resistance_valueLabel->setFont(labelFont);
 }
 
+void membrane_test::Panel::update_panel_values()
+{
+  Widgets::Plugin* hplugin = getHostPlugin();
+  // Make sure real-time thread is not in the middle of execution
+  const bool executing = RT::State::EXEC == hplugin->getComponentState();
+  const bool acquire_on = hplugin->getComponentUIntParameter(ACQUIRE_ON) == 1;
+  this->mtUi.mp_acquire_button->setDown(acquire_on);
+  this->mtUi.pulse_button->setDown(executing);
+}
+
 // Membrane property values
 void membrane_test::Panel::update_mp_display()
 {
@@ -608,25 +636,6 @@ void membrane_test::Panel::update_mp_display()
 
   if (mtUi.mp_mode_comboBox->currentIndex() == SINGLE) {
     mtUi.mp_acquire_button->setChecked(false);
-  }
-}
-
-// Event handling
-// TODO: Properly handle changes in period on the real-time side
-void membrane_test::Plugin::receiveEvent(Event::Object* event)
-{
-  uint64_t cnt = 0;
-  // When thread rate is changed, update rate dependent parameters
-  switch (event->getType()) {
-    case Event::RT_PERIOD_EVENT:
-      // Number of loops for complete step (2x pulse width)
-      // cnt = ((2.0 * pulseWidth) * 1e-3)
-      //     / (RT::OS::getPeriod() * 1e-9);
-      // Restart membrane properties data collection
-      // if (mp_collectData)
-      //   mp_collectData = false;
-    default:
-      break;
   }
 }
 

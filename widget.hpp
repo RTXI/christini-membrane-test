@@ -85,6 +85,7 @@ public:
 public slots:
   void update_rm_display();  // Refresh resistance measurement display
   void resize_rm_text();  // Resizes resistance measurement font
+  void update_panel_values();
   void update_mp_display();  // Refresh membrane property values
   void modify() override;  // Update parameters
   void toggle_pulse(bool);  // Called when pulse button is pressed
@@ -101,6 +102,7 @@ private:
   QWidget* mtWindow = nullptr;
   QMdiSubWindow* subWindow = nullptr;
   QTimer* rs_timer = nullptr;  // Resize timer
+  QTimer* mp_timer = nullptr; // update values timer
   double cm = 0;
   double ra = 0;
   double rm = 0;
@@ -140,7 +142,6 @@ class Plugin : public Widgets::Plugin
 {
 public:
   explicit Plugin(Event::Manager* ev_manager);
-  void receiveEvent(Event::Object* event) override;
   RT::OS::Fifo* getFifo() { return Fifo.get(); }
 
 private:
