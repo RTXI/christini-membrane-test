@@ -52,23 +52,15 @@ void membrane_test::Component::execute()
     case RT::State::EXEC: {
       const int64_t current_time_ns =
           RT::OS::getTime() - this->measure_start_ns;
-      // We only measure current from T/4 to T/2 during step on and
-      // from 3T/4 to T during step off. This can be represented with
-      // sections 1 and 3
-      const int64_t period_section = (current_time_ns / (mp_period / 4)) % 4;
+      const int period_section = (current_time_ns / (pulseWidth * 1000000)) % 2;
       switch (period_section) {
         case 0:
-        case 1:
           writeoutput(0, (holdingVoltage + pulseAmp) * 1e-3);
           break;
-        case 3:
-        case 4:
+        case 1:
           writeoutput(0, holdingVoltage * 1e-3);
           break;
         default:
-          ERROR_MSG(
-              "membrane_test::Component::execute : Impossible period section "
-              "calculated");
           break;
       }
       const bool mp_collectData = acquire_data
@@ -83,7 +75,9 @@ void membrane_test::Component::execute()
       if (mp_collectData) {
         // This try-catch block guarantees that our execution function does not
         // bring down the whole system because of unreasonable configuration.
-        // It is better then crashing.
+        // It is better then crashing. Not to worry the data is preallocated and
+        // it is unlikely that this would allocate. But if it does and fails
+        // won't crash.
         try {
           mp_data.push_back(readinput(0));
         } catch (const std::bad_alloc& e) {
@@ -100,10 +94,21 @@ void membrane_test::Component::execute()
       break;
     }
     case RT::State::INIT:
+      pulseAmp = getValue<double>(PULSE_AMP);
+      holdingVoltage = getValue<double>(HOLDING_VOLTAGE);
+      pulseWidth = getValue<int64_t>(PULSE_WIDTH);
+      mp_stepsTotal = getValue<uint64_t>(TARGET_PULSE_COUNT);
+      mp_stepsCount = 0;
+      acquire_data = getValue<uint64_t>(ACQUIRE_ON) == 1;
+      mp_mode = static_cast<mp_mode_t>(getValue<uint64_t>(MP_MODE));
+      mp_period = RT::OS::getPeriod();
+      setState(RT::State::PAUSE);
+      break;
     case RT::State::MODIFY:
       pulseAmp = getValue<double>(PULSE_AMP);
       holdingVoltage = getValue<double>(HOLDING_VOLTAGE);
       pulseWidth = getValue<int64_t>(PULSE_WIDTH);
+      std::cout << pulseWidth << std::endl;
       mp_stepsTotal = getValue<uint64_t>(TARGET_PULSE_COUNT);
       mp_stepsCount = 0;
       acquire_data = getValue<uint64_t>(ACQUIRE_ON) == 1;
@@ -415,7 +420,6 @@ void membrane_test::Component::initialize()
 void membrane_test::Panel::modify()
 {
   Widgets::Plugin* hplugin = getHostPlugin();
-  RT::State::state_t state = getHostPlugin()->getComponentState();
   // Make sure real-time thread is not in the middle of execution
   getHostPlugin()->setComponentState(RT::State::PAUSE);
 
@@ -433,8 +437,8 @@ void membrane_test::Panel::modify()
 
   hplugin->setComponentParameter<double>(PARAMETER::PULSE_AMP,
                                          mtUi.pulseAmp_spinBox->value());
-  hplugin->setComponentParameter<uint64_t>(PARAMETER::PULSE_WIDTH,
-                                           mtUi.pulseWidth_spinBox->value());
+  hplugin->setComponentParameter<int64_t>(PARAMETER::PULSE_WIDTH,
+                                          mtUi.pulseWidth_spinBox->value());
   const uint64_t mp_stepsTotal = mtUi.mp_steps_spinBox->value();
   hplugin->setComponentParameter<uint64_t>(PARAMETER::TARGET_PULSE_COUNT,
                                            mp_stepsTotal);
@@ -450,7 +454,7 @@ void membrane_test::Panel::modify()
   mtUi.mp_updatePeriod_spinBox->setMinimum(std::max(1, min_updatePeriod));
   mp_updatePeriod = mtUi.mp_updatePeriod_spinBox->value();
 
-  getHostPlugin()->setComponentState(state);
+  getHostPlugin()->setComponentState(RT::State::MODIFY);
 }
 
 // Toggle slot functions
@@ -477,8 +481,8 @@ void membrane_test::Panel::update_rm_display()
   }
   RT::OS::Fifo* fifo =
       dynamic_cast<membrane_test::Plugin*>(getHostPlugin())->getFifo();
-  size_t num_bytes_read = fifo->read(
-      mp_data.data(), sizeof(double) * mp_data.size());
+  size_t num_bytes_read =
+      fifo->read(mp_data.data(), sizeof(double) * mp_data.size());
   if (num_bytes_read == 0) {
     return;
   }
