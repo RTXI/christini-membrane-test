@@ -10,7 +10,6 @@
 #include <qtimer.h>
 #include <rtxi/rt.hpp>
 #include <rtxi/rtos.hpp>
-
 #include "ui_Membrane_Test_MainWindow.h"
 
 membrane_test::Plugin::Plugin(Event::Manager* ev_manager)
@@ -18,6 +17,27 @@ membrane_test::Plugin::Plugin(Event::Manager* ev_manager)
 {
   if (RT::OS::getFifo(this->Fifo, 100000) != 0) {
     ERROR_MSG("Unable to create Fifo for membrane_test plugin");
+  }
+  Event::Object event(Event::Type::RT_GET_PERIOD_EVENT);
+  ev_manager->postEvent(&event);
+  this->period_ns = std::any_cast<int64_t>(event.getParam("period"));
+}
+
+void membrane_test::Plugin::receiveEvent(Event::Object* event)
+{
+  // This is the exact same implementation as the default receiveEvent provided
+  // by the widgets base class.. except we wish to store the period in userspace
+  // so that the plugin can quickly calculate membrane properties without having
+  // to consult the realtime system for the current period every time.
+  switch (event->getType()) {
+    case Event::Type::RT_PERIOD_EVENT:
+      this->period_ns = std::any_cast<int64_t>(event->getParam("period"));
+      if (this->getPanel() == nullptr) {
+        this->getPanel()->signal_state_change(RT::State::PERIOD);
+      }
+      break;
+    default:
+      break;
   }
 }
 
@@ -165,8 +185,9 @@ void membrane_test::Panel::MP_Calculate()
   }
   I2 /= ceil(data_size / 8);
 
-  // Units?
-  double dt = RT::OS::getPeriod() * 1e-6;
+  // Units seem to be milliseconds
+  // double dt = RT::OS::getPeriod() * 1e-6;
+  double dt = dynamic_cast<membrane_test::Plugin*>(this->getHostPlugin())->getPeriod() * 1e-6;
 
   double Q11 = NAN;
   double tau1 = NAN;
@@ -176,6 +197,12 @@ void membrane_test::Panel::MP_Calculate()
       Q11 += dt * 1e-3 * (mp_data.at(i) + mp_data.at(i + 1) - 2 * I1) / 2;
     }
     Q11 = fabs(Q11);
+
+    // the max value SHOULD be the point where the curve starts falling at
+    // the beginning of the square wave.
+    auto iter =
+        std::max_element(mp_data.begin(), mp_data.end() - mp_data.size() / 2);
+    long xi = std::distance(mp_data.begin(), iter);
 
     double sy = 0.0;
     double Y = mp_data.at(xi);
@@ -238,10 +265,11 @@ void membrane_test::Panel::MP_Calculate()
       Q12 += dt * 1e-3 * (mp_data.at(i) + mp_data.at(i + 1) - 2 * I2) / 2;
     Q12 = fabs(Q12);
 
-    size_t xi = data_size / 2;
-    for (; mp_data.at(xi) >= mp_data.at(xi + 1); ++xi) {
-      ;
-    }
+    // the min value SHOULD be the point where the curve starts rising at
+    // the middle of the square wave.
+    auto iter =
+        std::min_element(mp_data.begin() + mp_data.size() / 2, mp_data.end());
+    long xi = std::distance(mp_data.begin(), iter);
 
     double sy = 0.0;
     double Y = mp_data.at(xi);

@@ -143,9 +143,13 @@ class Plugin : public Widgets::Plugin
 public:
   explicit Plugin(Event::Manager* ev_manager);
   RT::OS::Fifo* getFifo() { return Fifo.get(); }
+  // custom implementation for receiving events
+  void receiveEvent(Event::Object* event) override;
+  int64_t getPeriod() const { return period_ns; }
 
 private:
   std::unique_ptr<RT::OS::Fifo> Fifo;
+  int64_t period_ns = 0;
 };
 
 }  // namespace membrane_test
