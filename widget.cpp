@@ -10,6 +10,7 @@
 #include <qtimer.h>
 #include <rtxi/rt.hpp>
 #include <rtxi/rtos.hpp>
+
 #include "ui_Membrane_Test_MainWindow.h"
 
 membrane_test::Plugin::Plugin(Event::Manager* ev_manager)
@@ -96,7 +97,8 @@ void membrane_test::Component::execute()
       // it is unlikely that this would allocate. But if it does and fails
       // won't crash.
       try {
-        mp_data.push_back(readinput(0));
+        const double input = readinput(0);
+        mp_data.push_back(input);
       } catch (const std::bad_alloc& e) {
         ERROR_MSG(
             "membrane_test::Component::execute : Memory allocation failed "
@@ -109,6 +111,7 @@ void membrane_test::Component::execute()
       break;
     }
     case RT::State::INIT:
+      readinput(0);
       pulseAmp = getValue<double>(PULSE_AMP);
       holdingVoltage = getValue<double>(HOLDING_VOLTAGE);
       pulseWidth = getValue<int64_t>(PULSE_WIDTH);
@@ -120,6 +123,7 @@ void membrane_test::Component::execute()
       setState(RT::State::PAUSE);
       break;
     case RT::State::MODIFY:
+      readinput(0);
       pulseAmp = getValue<double>(PULSE_AMP);
       holdingVoltage = getValue<double>(HOLDING_VOLTAGE);
       pulseWidth = getValue<int64_t>(PULSE_WIDTH);
@@ -131,10 +135,12 @@ void membrane_test::Component::execute()
       setState(RT::State::EXEC);
       break;
     case RT::State::PERIOD:
+      readinput(0);
       this->mp_period = RT::OS::getPeriod();
       setState(RT::State::EXEC);
       break;
     case RT::State::PAUSE:
+      readinput(0);
       writeoutput(0, 0);
       break;
     case RT::State::UNPAUSE:
@@ -187,7 +193,9 @@ void membrane_test::Panel::MP_Calculate()
 
   // Units seem to be milliseconds
   // double dt = RT::OS::getPeriod() * 1e-6;
-  double dt = dynamic_cast<membrane_test::Plugin*>(this->getHostPlugin())->getPeriod() * 1e-6;
+  double dt =
+      dynamic_cast<membrane_test::Plugin*>(this->getHostPlugin())->getPeriod()
+      * 1e-6;
 
   double Q11 = NAN;
   double tau1 = NAN;
@@ -527,11 +535,12 @@ void membrane_test::Panel::update_rm_display()
     double value = 0.0;
     while (fifo->read(&value, sizeof(double)) > 0) {
       mp_data.push_back(value);
+      num_bytes_read += sizeof(double);
     }
   }
 
+  const size_t data_size = num_bytes_read / sizeof(double);
   // Calculate currents and dI
-  const size_t data_size = mp_data.size();
   double I_1 = 0.0;
   for (auto i = static_cast<size_t>(round(data_size / 2 - ceil(data_size / 8)));
        i < data_size / 2;
@@ -549,9 +558,7 @@ void membrane_test::Panel::update_rm_display()
     I_2 += mp_data.at(i);
   }
   I_2 /= ceil(data_size / 8);
-
   dI = (I_1 - I_2);
-
   const double pulseAmp = mtUi.pulseAmp_spinBox->value();
   double R = fabs((pulseAmp * 1e-3) / dI);  // Resistance calculation
   size_t exp = 0;  // Exponent of resistance
@@ -589,7 +596,8 @@ void membrane_test::Panel::update_rm_display()
   ++pulse_count;
   if (mp_data_average.size() == 0 || pulse_count <= 1) {
     mp_data_average.resize(data_size);
-    std::copy(mp_data.begin(), mp_data.end(), mp_data_average.begin());
+    std::copy(
+        mp_data.begin(), mp_data.begin() + data_size, mp_data_average.begin());
   } else {
     if (mp_data.size() > mp_data_average.size()) {
       mp_data_average.resize(data_size);
@@ -601,7 +609,7 @@ void membrane_test::Panel::update_rm_display()
           / pulse_count;
     }
   }
-  this->mtUi.mp_acquire_button->isDown();
+
   if (this->mtUi.mp_acquire_button->isDown()
       && pulse_count >= mtUi.mp_steps_spinBox->value())
   {
@@ -642,12 +650,17 @@ void membrane_test::Panel::resize_rm_text()
 
 void membrane_test::Panel::update_pulse_button()
 {
-  Widgets::Plugin* hplugin = getHostPlugin();
-  // Make sure real-time thread is not in the middle of execution
-  const bool executing = RT::State::EXEC == hplugin->getComponentState();
-  if (mtUi.pulse_button->isDown() != executing) {
-    this->mtUi.pulse_button->setChecked(executing);
+ if (getHostPlugin() == nullptr) {
+    return;
   }
+  // Make sure real-time thread is not in the middle of execution
+  Widgets::Plugin* hplugin = getHostPlugin();
+  const RT::State::state_t state = getHostPlugin()->getComponentState();
+  if (state == RT::State::UNDEFINED) {
+    return;
+  }
+  const bool paused = state != RT::State::PAUSE;
+  mtUi.pulse_button->setDown(paused);
 }
 
 // Membrane property values

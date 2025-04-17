@@ -82,6 +82,9 @@ public:
   Panel(QMainWindow* main_window, Event::Manager* ev_manager);
   void customizeGUI();  // Build and connect Ui elements
 
+signals:
+  void pulse_state_updated();
+
 public slots:
   void update_rm_display();  // Refresh resistance measurement display
   void resize_rm_text();  // Resizes resistance measurement font
