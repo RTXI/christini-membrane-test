@@ -83,7 +83,7 @@ public:
   void customizeGUI();  // Build and connect Ui elements
 
 signals:
-  void pulse_state_updated();
+  void update_state();
 
 public slots:
   void update_rm_display();  // Refresh resistance measurement display
@@ -106,6 +106,7 @@ private:
   QMdiSubWindow* subWindow = nullptr;
   QTimer* rs_timer = nullptr;  // Resize timer
   QTimer* mp_timer = nullptr; // update values timer
+  QTimer* state_timer = nullptr; // Update panel state
   double cm = 0;
   double ra = 0;
   double rm = 0;
@@ -132,11 +133,11 @@ private:
   // Resistance measurement variables
   uint64_t mp_stepsCount = 0;
   uint64_t mp_stepsTotal = 0;
-  int64_t mp_period = 0;  // Period at which calculation occurs
   int64_t pulseWidth = 0;  // Width of voltage pulse
   int64_t measure_start_ns = 0;
   double holdingVoltage = 0;
   double pulseAmp = 0;  // Amplitude of voltage pulse
+  int cycle_count = 0;  // Number of cycles since pulse started
   mp_mode_t mp_mode = SINGLE;
   bool acquire_data = false;
 };

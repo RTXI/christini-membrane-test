@@ -1,4 +1,6 @@
 #include <QMdiSubWindow>
+#include <QTextStream>
+#include <QTimer>
 #include <cmath>
 #include <cstddef>
 
@@ -7,7 +9,6 @@
 #include <gsl/gsl_linalg.h>
 #include <gsl/gsl_matrix_double.h>
 #include <math.h>
-#include <qtimer.h>
 #include <rtxi/rt.hpp>
 #include <rtxi/rtos.hpp>
 
@@ -87,7 +88,9 @@ void membrane_test::Component::execute()
           break;
       }
       // Check if a pulseWidth cycle has occurred
-      if (current_time_ns % (pulseWidth * 1000000 * 2) <= mp_period) {
+      const int64_t count = current_time_ns / (pulseWidth * 1000000 * 2);
+      if (count > cycle_count) {
+        cycle_count = count;
         fifo->writeRT(mp_data.data(), sizeof(double) * mp_data.size());
         mp_data.clear();
       }
@@ -117,9 +120,9 @@ void membrane_test::Component::execute()
       pulseWidth = getValue<int64_t>(PULSE_WIDTH);
       mp_stepsTotal = getValue<uint64_t>(TARGET_PULSE_COUNT);
       mp_stepsCount = 0;
+      cycle_count = 0;
       acquire_data = getValue<uint64_t>(ACQUIRE_ON) == 1;
       mp_mode = static_cast<mp_mode_t>(getValue<uint64_t>(MP_MODE));
-      mp_period = RT::OS::getPeriod();
       setState(RT::State::PAUSE);
       break;
     case RT::State::MODIFY:
@@ -129,14 +132,14 @@ void membrane_test::Component::execute()
       pulseWidth = getValue<int64_t>(PULSE_WIDTH);
       mp_stepsTotal = getValue<uint64_t>(TARGET_PULSE_COUNT);
       mp_stepsCount = 0;
+      cycle_count=0;
       acquire_data = getValue<uint64_t>(ACQUIRE_ON) == 1UL;
       mp_mode = static_cast<mp_mode_t>(getValue<uint64_t>(MP_MODE));
-      mp_period = RT::OS::getPeriod();
       setState(RT::State::EXEC);
       break;
     case RT::State::PERIOD:
+      // discard input values
       readinput(0);
-      this->mp_period = RT::OS::getPeriod();
       setState(RT::State::EXEC);
       break;
     case RT::State::PAUSE:
@@ -145,6 +148,8 @@ void membrane_test::Component::execute()
       break;
     case RT::State::UNPAUSE:
       this->measure_start_ns = RT::OS::getTime();
+      cycle_count = 0;
+      mp_data.clear();
       setState(RT::State::EXEC);
       break;
     default:
@@ -440,7 +445,7 @@ void membrane_test::Panel::customizeGUI()
                    this,
                    &membrane_test::Panel::update_pulse_button);
   mp_timer->start(1000);
-  rs_timer->start(100);
+  //rs_timer->start(100);
   resizeMe();
 }
 
@@ -504,7 +509,8 @@ void membrane_test::Panel::modify()
 // Toggle slot functions
 void membrane_test::Panel::toggle_pulse(bool on)
 {
-  on ? rs_timer->start(mp_updatePeriod * 1000) : rs_timer->stop();
+  auto* hplugin = this->getHostPlugin();
+  on ? rs_timer->start(mtUi.pulseWidth_spinBox->value()) : rs_timer->stop();
   getHostPlugin()->setComponentState(on ? RT::State::UNPAUSE
                                         : RT::State::PAUSE);
 }
@@ -570,25 +576,29 @@ void membrane_test::Panel::update_rm_display()
     }
   }
 
+  QTextStream sstream;
   QString RString;
-  QString::asprintf("%7.5g", R);
+  sstream.setString(&RString);
+  sstream.setRealNumberPrecision(3);
+  sstream << R;
 
   // Choose appropriate suffic based on exponent
   if (exp != 0) {
     if (exp == 1) {
-      RString.append(" K").append(omega);
+      sstream << " K";
     } else if (exp == 2) {
-      RString.append(" M").append(omega);
+      sstream << " M";
     } else if (exp == 3) {
-      RString.append(" G").append(omega);
+      sstream << " G";
 
     } else {
       QString suffic;
       QString::asprintf(" * 1e%lu", 3 * exp);
     }
   } else {
-    RString.append(" ").append(omega);
+    sstream << " ";
   }
+  sstream << omega;
   mtUi.resistance_valueLabel->setText(RString);
 
   // Calcualte the running average
@@ -650,7 +660,7 @@ void membrane_test::Panel::resize_rm_text()
 
 void membrane_test::Panel::update_pulse_button()
 {
- if (getHostPlugin() == nullptr) {
+  if (getHostPlugin() == nullptr) {
     return;
   }
   // Make sure real-time thread is not in the middle of execution
@@ -660,7 +670,7 @@ void membrane_test::Panel::update_pulse_button()
     return;
   }
   const bool paused = state != RT::State::PAUSE;
-  mtUi.pulse_button->setDown(paused);
+  mtUi.pulse_button->setChecked(paused);
 }
 
 // Membrane property values
