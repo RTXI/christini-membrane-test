@@ -132,10 +132,10 @@ void membrane_test::Component::execute()
       pulseWidth = getValue<int64_t>(PULSE_WIDTH);
       mp_stepsTotal = getValue<uint64_t>(TARGET_PULSE_COUNT);
       mp_stepsCount = 0;
-      cycle_count=0;
+      cycle_count = 0;
       acquire_data = getValue<uint64_t>(ACQUIRE_ON) == 1UL;
       mp_mode = static_cast<mp_mode_t>(getValue<uint64_t>(MP_MODE));
-      setState(RT::State::EXEC);
+      setState(RT::State::UNPAUSE);
       break;
     case RT::State::PERIOD:
       // discard input values
@@ -445,7 +445,7 @@ void membrane_test::Panel::customizeGUI()
                    this,
                    &membrane_test::Panel::update_pulse_button);
   mp_timer->start(1000);
-  //rs_timer->start(100);
+  // rs_timer->start(100);
   resizeMe();
 }
 
@@ -518,6 +518,7 @@ void membrane_test::Panel::toggle_pulse(bool on)
 void membrane_test::Panel::toggle_mp_acquire(bool on)
 {
   Widgets::Plugin* hplugin = getHostPlugin();
+  pulse_count = 0;
   const uint64_t acq = on ? 1UL : 0UL;
   hplugin->setComponentParameter(ACQUIRE_ON, acq);
   hplugin->setComponentState(RT::State::MODIFY);
@@ -620,7 +621,7 @@ void membrane_test::Panel::update_rm_display()
     }
   }
 
-  if (this->mtUi.mp_acquire_button->isDown()
+  if (this->mtUi.mp_acquire_button->isChecked()
       && pulse_count >= mtUi.mp_steps_spinBox->value())
   {
     MP_Calculate();

@@ -36,7 +36,7 @@ inline std::vector<Widgets::Variable::Info> get_default_vars()
       {PARAMETER::HOLDING_VOLTAGE,
        "Holding Voltage",
        "Voltage (mV) level to hold for",
-       Widgets::Variable::INT_PARAMETER,
+       Widgets::Variable::DOUBLE_PARAMETER,
        0.0},
       {PARAMETER::PULSE_AMP,
        "Pluse Amplitude",
@@ -137,7 +137,7 @@ private:
   int64_t measure_start_ns = 0;
   double holdingVoltage = 0;
   double pulseAmp = 0;  // Amplitude of voltage pulse
-  int cycle_count = 0;  // Number of cycles since pulse started
+  std::atomic<int> cycle_count = 0;  // Number of cycles since pulse started
   mp_mode_t mp_mode = SINGLE;
   bool acquire_data = false;
 };
