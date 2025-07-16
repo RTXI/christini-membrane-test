@@ -49,7 +49,7 @@ membrane_test::Panel::Panel(QMainWindow* main_window,
           std::string(membrane_test::MODULE_NAME), main_window, ev_manager)
 {
   setWhatsThis("Christini Lab Membrane Properties Probe");
-  mp_data.resize(10000, 0.0);
+  mp_data.resize(10000, {0.0, false});
   customizeGUI();
 }
 
@@ -73,9 +73,8 @@ void membrane_test::Component::execute()
 {
   switch (this->getState()) {
     case RT::State::EXEC: {
-      const int64_t current_time_ns =
-          RT::OS::getTime() - this->measure_start_ns;
-      const int period_section = (current_time_ns / (pulseWidth * 1000000)) % 2;
+    const int64_t current_time_ns = RT::OS::getTime() - this->measure_start_ns;
+    const int period_section = (current_time_ns / (pulseWidth * 1000000)) % 2;
       // generate the square wave
       switch (period_section) {
         case 0:
@@ -91,7 +90,7 @@ void membrane_test::Component::execute()
       const int64_t count = current_time_ns / (pulseWidth * 1000000 * 2);
       if (count > cycle_count) {
         cycle_count = count;
-        fifo->writeRT(mp_data.data(), sizeof(double) * mp_data.size());
+        fifo->writeRT(mp_data.data(), sizeof(measurement) * mp_data.size());
         mp_data.clear();
       }
       // This try-catch block guarantees that our execution function does not
@@ -101,7 +100,7 @@ void membrane_test::Component::execute()
       // won't crash.
       try {
         const double input = readinput(0);
-        mp_data.push_back(input);
+        mp_data.emplace_back(measurement{input, !static_cast<bool>(period_section)});
       } catch (const std::bad_alloc& e) {
         ERROR_MSG(
             "membrane_test::Component::execute : Memory allocation failed "
@@ -171,11 +170,11 @@ void membrane_test::Panel::MP_Calculate()
   // Taken from electrophys_plugin, written by Jonathan Bettencourt
   // In short, uses area under capacitive transient to calculate Cm by using
   // exponential curve fitting
-  const size_t data_size = mp_data.size();
+  const size_t data_size = mp_data_average.size();
   uint64_t mp_stepsTotal = mtUi.mp_updatePeriod_spinBox->value();
   // Average has been taken before calling this function
   // for (size_t i = 0; i < data_size; ++i) {
-  //  mp_data.at(i) /= mp_stepsTotal;
+  //  mp_data_average.at(i) /= mp_stepsTotal;
   //}
 
   double I1 = 0.0;
@@ -183,7 +182,7 @@ void membrane_test::Panel::MP_Calculate()
        i < data_size / 2;
        ++i)
   {
-    I1 += mp_data.at(i);
+    I1 += mp_data_average.at(i);
   }
   I1 /= ceil(data_size / 8);
 
@@ -192,7 +191,7 @@ void membrane_test::Panel::MP_Calculate()
        i < data_size;
        ++i)
   {
-    I2 += mp_data.at(i);
+    I2 += mp_data_average.at(i);
   }
   I2 /= ceil(data_size / 8);
 
@@ -207,36 +206,36 @@ void membrane_test::Panel::MP_Calculate()
   {
     Q11 = 0.0;
     for (size_t i = 0; i < data_size / 2 - 1; ++i) {
-      Q11 += dt * 1e-3 * (mp_data.at(i) + mp_data.at(i + 1) - 2 * I1) / 2;
+      Q11 += dt * 1e-3 * (mp_data_average.at(i) + mp_data_average.at(i + 1) - 2 * I1) / 2;
     }
     Q11 = fabs(Q11);
 
     // the max value SHOULD be the point where the curve starts falling at
     // the beginning of the square wave.
     auto iter =
-        std::max_element(mp_data.begin(), mp_data.end() - mp_data.size() / 2);
-    long xi = std::distance(mp_data.begin(), iter);
+        std::max_element(mp_data_average.begin(), mp_data_average.end() - mp_data_average.size() / 2);
+    long xi = std::distance(mp_data_average.begin(), iter);
 
     double sy = 0.0;
-    double Y = mp_data.at(xi);
+    double Y = mp_data_average.at(xi);
     double SY = sy;
     double tSY = 0.0;
-    double YSY = mp_data.at(xi) * sy;
+    double YSY = mp_data_average.at(xi) * sy;
     double SYSY = sy * sy;
     double t = 0.0;
     double tt = 0.0;
     double Yt = 0.0;
     for (size_t i = xi + 1; i < data_size / 2; ++i) {
-      sy += dt * 1e-3 * (mp_data.at(i - 1) + mp_data.at(i)) / 2;
+      sy += dt * 1e-3 * (mp_data_average.at(i - 1) + mp_data_average.at(i)) / 2;
 
-      Y += mp_data.at(i);
+      Y += mp_data_average.at(i);
       SY += sy;
       tSY += (i - xi) * dt * 1e-3 * sy;
-      YSY += mp_data.at(i) * sy;
+      YSY += mp_data_average.at(i) * sy;
       SYSY += sy * sy;
       t += (i - xi) * dt * 1e-3;
       tt += ((i - xi) * dt * 1e-3) * ((i - xi) * dt * 1e-3);
-      Yt += (i - xi) * dt * 1e-3 * mp_data.at(i);
+      Yt += (i - xi) * dt * 1e-3 * mp_data_average.at(i);
     }
 
     std::array<double, 9> A = {
@@ -275,35 +274,35 @@ void membrane_test::Panel::MP_Calculate()
   {
     Q12 = 0.0;
     for (size_t i = data_size / 2; i < data_size - 1; ++i)
-      Q12 += dt * 1e-3 * (mp_data.at(i) + mp_data.at(i + 1) - 2 * I2) / 2;
+      Q12 += dt * 1e-3 * (mp_data_average.at(i) + mp_data_average.at(i + 1) - 2 * I2) / 2;
     Q12 = fabs(Q12);
 
     // the min value SHOULD be the point where the curve starts rising at
     // the middle of the square wave.
     auto iter =
-        std::min_element(mp_data.begin() + mp_data.size() / 2, mp_data.end());
-    long xi = std::distance(mp_data.begin(), iter);
+        std::min_element(mp_data_average.begin() + mp_data_average.size() / 2, mp_data_average.end());
+    long xi = std::distance(mp_data_average.begin(), iter);
 
     double sy = 0.0;
-    double Y = mp_data.at(xi);
+    double Y = mp_data_average.at(xi);
     double SY = sy;
     double tSY = 0.0;
-    double YSY = mp_data.at(xi) * sy;
+    double YSY = mp_data_average.at(xi) * sy;
     double SYSY = sy * sy;
     double t = 0.0;
     double tt = 0.0;
     double Yt = 0.0;
     for (size_t i = xi + 1; i < data_size; ++i) {
-      sy += dt * 1e-3 * (mp_data.at(i - 1) + mp_data.at(i)) / 2;
+      sy += dt * 1e-3 * (mp_data_average.at(i - 1) + mp_data_average.at(i)) / 2;
 
-      Y += mp_data.at(i);
+      Y += mp_data_average.at(i);
       SY += sy;
       tSY += (i - xi) * dt * 1e-3 * sy;
-      YSY += mp_data.at(i) * sy;
+      YSY += mp_data_average.at(i) * sy;
       SYSY += sy * sy;
       t += (i - xi) * dt * 1e-3;
       tt += ((i - xi) * dt * 1e-3) * ((i - xi) * dt * 1e-3);
-      Yt += (i - xi) * dt * 1e-3 * mp_data.at(i);
+      Yt += (i - xi) * dt * 1e-3 * mp_data_average.at(i);
     }
 
     std::array<double, 9> A = {
@@ -534,37 +533,33 @@ void membrane_test::Panel::update_rm_display()
   RT::OS::Fifo* fifo =
       dynamic_cast<membrane_test::Plugin*>(getHostPlugin())->getFifo();
   int64_t num_bytes_read =
-      fifo->read(mp_data.data(), sizeof(double) * mp_data.size());
+      fifo->read(mp_data.data(), sizeof(measurement) * mp_data.size());
   if (num_bytes_read <= 0) {
     return;
   }
-  if (mp_data.size() == num_bytes_read / sizeof(double)) {
-    double value = 0.0;
-    while (fifo->read(&value, sizeof(double)) > 0) {
+  if (mp_data.size() == num_bytes_read / sizeof(measurement)) {
+    measurement value = {0.0, false};
+    while (fifo->read(&value, sizeof(measurement)) > 0) {
       mp_data.push_back(value);
       num_bytes_read += sizeof(double);
     }
+  } else {
+    mp_data.resize(num_bytes_read / sizeof(measurement));
   }
 
-  const size_t data_size = num_bytes_read / sizeof(double);
+  const size_t data_size = num_bytes_read / sizeof(measurement);
   // Calculate currents and dI
   double I_1 = 0.0;
-  for (auto i = static_cast<size_t>(round(data_size / 2 - ceil(data_size / 8)));
-       i < data_size / 2;
-       ++i)
-  {
-    I_1 += mp_data.at(i);
-  }
-  I_1 /= ceil(data_size / 8);
-
+  int first_count = 0;
   double I_2 = 0.0;
-  for (auto i = static_cast<size_t>(round(data_size - ceil(data_size / 8)));
-       i < data_size;
-       ++i)
-  {
-    I_2 += mp_data.at(i);
+  int second_count = 0;
+  for (const auto& value : mp_data) {
+    value.on ? I_1 += value.current : I_2 += value.current;
+    value.on ? ++first_count : ++second_count;
   }
-  I_2 /= ceil(data_size / 8);
+  I_1 /= first_count;
+  I_2 /= second_count;
+
   dI = (I_1 - I_2);
   const double pulseAmp = mtUi.pulseAmp_spinBox->value();
   double R = fabs((pulseAmp * 1e-3) / dI);  // Resistance calculation
@@ -604,20 +599,37 @@ void membrane_test::Panel::update_rm_display()
 
   // Calcualte the running average
   const int mp_stepsTotal = mtUi.mp_updatePeriod_spinBox->value();
-  ++pulse_count;
+  bool last_on = false;
+  size_t indx = 0;
   if (mp_data_average.size() == 0 || pulse_count <= 1) {
-    mp_data_average.resize(data_size);
-    std::copy(
-        mp_data.begin(), mp_data.begin() + data_size, mp_data_average.begin());
-  } else {
-    if (mp_data.size() > mp_data_average.size()) {
-      mp_data_average.resize(data_size);
+    mp_data_average.reserve(data_size);
+    for (size_t i = 0; i < data_size; ++i) {
+      if (mp_data.at(i).on && !last_on) {
+        indx = 0;
+        pulse_count++;
+      }
+      if (indx < mp_data_average.size()) {
+        mp_data_average.at(indx) += mp_data.at(i).current;
+      } else {
+        mp_data_average.push_back(mp_data.at(i).current);
+      }
+      last_on = mp_data.at(i).on;
+      indx++;
     }
-    for (auto indx = 0; indx < data_size; ++indx) {
+  } else {
+    for (auto i = 0; i < data_size; ++i) {
+      if (mp_data.at(i).on && !last_on) {
+        indx = 0;
+        pulse_count++;
+      }
       // calculate average
-      mp_data_average.at(indx) =
-          (mp_data_average.at(indx) * (pulse_count - 1) + mp_data.at(indx))
-          / pulse_count;
+      if (mp_data_average.size() <= indx) {
+        mp_data_average.push_back(mp_data.at(i).current);
+      } else {
+        mp_data_average.at(indx) = (mp_data_average.at(indx) * (pulse_count - 1)
+                                    + mp_data.at(i).current)
+            / pulse_count;
+      }
     }
   }
 

@@ -11,6 +11,12 @@
 namespace membrane_test
 {
 
+struct measurement{
+  double current=0;
+  bool on=false;
+};
+using mesasurement = struct measurement;
+
 enum mp_mode_t
 {
   SINGLE = 0,
@@ -99,7 +105,7 @@ public slots:
 
 private:
   // We read current data from the realtime thread using this fifo
-  std::vector<double> mp_data;
+  std::vector<measurement> mp_data;
   std::vector<double> mp_data_average;
   Ui::Membrane_Test_UI mtUi;
   QWidget* mtWindow = nullptr;
@@ -125,7 +131,7 @@ public:
   void initialize();
 
 private:
-  std::vector<double> mp_data;
+  std::vector<measurement> mp_data;
   // We use this pipe/schannel to send data from the real time
   // to the ui thread without incurring uneccessary latencies
   RT::OS::Fifo* fifo = nullptr;
@@ -133,7 +139,7 @@ private:
   // Resistance measurement variables
   uint64_t mp_stepsCount = 0;
   uint64_t mp_stepsTotal = 0;
-  int64_t pulseWidth = 0;  // Width of voltage pulse
+  int64_t pulseWidth = 20;  // Width of voltage pulse
   int64_t measure_start_ns = 0;
   double holdingVoltage = 0;
   double pulseAmp = 0;  // Amplitude of voltage pulse
