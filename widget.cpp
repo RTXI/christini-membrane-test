@@ -1,5 +1,6 @@
 #include <QMdiSubWindow>
 #include <QTextStream>
+#include <fmt/format.h>
 #include <QTimer>
 #include <cmath>
 #include <cstddef>
@@ -158,14 +159,7 @@ void membrane_test::Component::execute()
 
 void membrane_test::Panel::MP_Calculate()
 {
-  double Vpp = 0.0;
-  if (mtUi.holdingVoltage1_button->isChecked()) {
-    Vpp = mtUi.holdingVoltage1_spinBox->value();
-  } else if (mtUi.holdingVoltage2_button->isChecked()) {
-    Vpp = mtUi.holdingVoltage2_spinBox->value();
-  } else {
-    Vpp = mtUi.holdingVoltage3_spinBox->value();
-  }
+  const double Vpp = mtUi.pulseAmp_spinBox->value();
 
   // Taken from electrophys_plugin, written by Jonathan Bettencourt
   // In short, uses area under capacitive transient to calculate Cm by using
@@ -572,30 +566,52 @@ void membrane_test::Panel::update_rm_display()
     }
   }
 
-  QTextStream sstream;
-  QString RString;
-  sstream.setString(&RString);
-  sstream.setRealNumberPrecision(3);
-  sstream << R;
+  // We want the decimal point to remain in the same column regardless of
+  // value or unit. Use a fixed-width numeric field: 3 integer digits,
+  // a decimal point, and 2 fractional digits -> total width = 6.
+  // Pad with zeros when necessary so the visual column of the '.' remains
+  // constant. Use fmt for consistent fixed formatting (no exponential).
+  const int int_width = 3;
+  const int precision = 2;  // at most 2 decimal places
+  const int total_width = int_width + 1 + precision;  // e.g. 3 + '.' + 2 = 6
 
-  // Choose appropriate suffic based on exponent
-  if (exp != 0) {
-    if (exp == 1) {
-      sstream << " K";
-    } else if (exp == 2) {
-      sstream << " M";
-    } else if (exp == 3) {
-      sstream << " G";
+  const std::string formatted = fmt::format(
+      "{:0{w}.{p}f}", R, fmt::arg("w", total_width), fmt::arg("p", precision));
 
-    } else {
-      QString suffic;
-      QString::asprintf(" * 1e%lu", 3 * exp);
-    }
+  // Build unit string without leading space so we can layout numeric and unit
+  // independently in HTML and guarantee the decimal point stays fixed.
+  QString unit;
+  if (exp == 0) {
+    unit = omega;  // plain ohms (just the omega symbol)
+  } else if (exp == 1) {
+    unit = QString("K").append(omega);
+  } else if (exp == 2) {
+    unit = QString("M").append(omega);
+  } else if (exp == 3) {
+    unit = QString("G").append(omega);
   } else {
-    sstream << " ";
+    unit = QString::fromStdString(fmt::format("* 1e{}", 3 * exp)).append(omega);
   }
-  sstream << omega;
-  mtUi.resistance_valueLabel->setText(RString);
+
+  // Use the label's font metrics to compute a fixed pixel width for the
+  // numeric field (based on the maximum pattern "000.00") so the decimal
+  // point remains vertically aligned regardless of unit length. Render as
+  // simple HTML with two spans: numeric (fixed width, right-aligned) and
+  // unit (left of it). QLabel supports a subset of HTML/CSS which works
+  // for this use-case.
+  QFont labelFont = mtUi.resistance_valueLabel->font();
+  QFontMetrics fm(labelFont);
+  const QString maxPattern = QString::fromStdString(fmt::format("{:0{w}.{p}f}", 0.0,
+                                                              fmt::arg("w", total_width),
+                                                              fmt::arg("p", precision)));
+  const int numWidthPx = fm.horizontalAdvance(maxPattern);
+
+  const QString html = QString("<span style='display:inline-block; width:%1px; text-align:right;'>%2</span><span style='margin-left:6px;'>%3</span>")
+                           .arg(numWidthPx)
+                           .arg(QString::fromStdString(formatted))
+                           .arg(unit);
+
+  mtUi.resistance_valueLabel->setText(html);
 
   // Calcualte the running average
   const int mp_stepsTotal = mtUi.mp_updatePeriod_spinBox->value();
