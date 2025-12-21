@@ -171,23 +171,43 @@ void membrane_test::Panel::MP_Calculate()
   //  mp_data_average.at(i) /= mp_stepsTotal;
   //}
 
+  // Compute I1 and I2 using explicit integer math to avoid integer
+  // division/ceil pitfalls and unsigned underflow for small data_size.
   double I1 = 0.0;
-  for (auto i = static_cast<size_t>(round(data_size / 2 - ceil(data_size / 8)));
-       i < data_size / 2;
-       ++i)
-  {
-    I1 += mp_data_average.at(i);
-  }
-  I1 /= ceil(data_size / 8);
-
   double I2 = 0.0;
-  for (auto i = static_cast<size_t>(round(data_size - ceil(data_size / 8)));
-       i < data_size;
-       ++i)
-  {
-    I2 += mp_data_average.at(i);
+  if (data_size == 0) {
+    // No data: early return with zeros
+    ra = 0.0;
+    rm = 0.0;
+    cm = 0.0;
+    return;
   }
-  I2 /= ceil(data_size / 8);
+
+  const size_t n = data_size;
+  const size_t segment = static_cast<size_t>(std::max(1.0, std::ceil(static_cast<double>(n) / 8.0)));
+  const size_t mid = n / 2;
+
+  // I1: average over the segment ending at mid (exclusive)
+  size_t start1 = (mid > segment) ? (mid - segment) : 0;
+  size_t end1 = mid;  // exclusive
+  size_t count1 = (end1 > start1) ? (end1 - start1) : 0;
+  if (count1 > 0) {
+    for (size_t i = start1; i < end1; ++i) {
+      I1 += mp_data_average.at(i);
+    }
+    I1 /= static_cast<double>(count1);
+  }
+
+  // I2: average over the final segment
+  size_t start2 = (n > segment) ? (n - segment) : 0;
+  size_t end2 = n;  // exclusive
+  size_t count2 = (end2 > start2) ? (end2 - start2) : 0;
+  if (count2 > 0) {
+    for (size_t i = start2; i < end2; ++i) {
+      I2 += mp_data_average.at(i);
+    }
+    I2 /= static_cast<double>(count2);
+  }
 
   // Units seem to be milliseconds
   // double dt = RT::OS::getPeriod() * 1e-6;
@@ -197,18 +217,22 @@ void membrane_test::Panel::MP_Calculate()
 
   double Q11 = NAN;
   double tau1 = NAN;
+  bool no_curvature1 = false;
   {
     Q11 = 0.0;
-    for (size_t i = 0; i < data_size / 2 - 1; ++i) {
-      Q11 += dt * 1e-3 * (mp_data_average.at(i) + mp_data_average.at(i + 1) - 2 * I1) / 2;
+    if (mid >= 2) {
+      for (size_t i = 0; i + 1 < mid; ++i) {
+        Q11 += dt * 1e-3 * (mp_data_average.at(i) + mp_data_average.at(i + 1) - 2 * I1) / 2;
+      }
     }
     Q11 = fabs(Q11);
 
     // the max value SHOULD be the point where the curve starts falling at
     // the beginning of the square wave.
-    auto iter =
-        std::max_element(mp_data_average.begin(), mp_data_average.end() - mp_data_average.size() / 2);
-    long xi = std::distance(mp_data_average.begin(), iter);
+  // Search only in the first half for the maximum
+  auto first_half_end = (mp_data_average.begin() + mid);
+  auto iter = std::max_element(mp_data_average.begin(), first_half_end);
+  long xi = std::distance(mp_data_average.begin(), iter);
 
     double sy = 0.0;
     double Y = mp_data_average.at(xi);
@@ -219,7 +243,7 @@ void membrane_test::Panel::MP_Calculate()
     double t = 0.0;
     double tt = 0.0;
     double Yt = 0.0;
-    for (size_t i = xi + 1; i < data_size / 2; ++i) {
+  for (size_t i = static_cast<size_t>(xi) + 1; i < mid; ++i) {
       sy += dt * 1e-3 * (mp_data_average.at(i - 1) + mp_data_average.at(i)) / 2;
 
       Y += mp_data_average.at(i);
@@ -260,22 +284,33 @@ void membrane_test::Panel::MP_Calculate()
 
     gsl_linalg_SV_decomp(&a.matrix, &b.matrix, &c.vector, &d.vector);
     gsl_linalg_SV_solve(&a.matrix, &b.matrix, &c.vector, &e.vector, &d.vector);
-    tau1 = fabs(1.0 / x.at(1));
+    double x1 = x.at(1);
+    if (!std::isfinite(x1) || fabs(x1) < 1e-12) {
+      // No measurable curvature in fit (division would be invalid)
+      no_curvature1 = true;
+      tau1 = NAN;
+    } else {
+      tau1 = fabs(1.0 / x1);
+    }
   }
 
   double Q12 = NAN;
   double tau2 = NAN;
+  bool no_curvature2 = false;
   {
     Q12 = 0.0;
-    for (size_t i = data_size / 2; i < data_size - 1; ++i)
-      Q12 += dt * 1e-3 * (mp_data_average.at(i) + mp_data_average.at(i + 1) - 2 * I2) / 2;
+    if (mid + 1 < n) {
+      for (size_t i = mid; i + 1 < n; ++i) {
+        Q12 += dt * 1e-3 * (mp_data_average.at(i) + mp_data_average.at(i + 1) - 2 * I2) / 2;
+      }
+    }
     Q12 = fabs(Q12);
 
     // the min value SHOULD be the point where the curve starts rising at
     // the middle of the square wave.
-    auto iter =
-        std::min_element(mp_data_average.begin() + mp_data_average.size() / 2, mp_data_average.end());
-    long xi = std::distance(mp_data_average.begin(), iter);
+  auto second_half_begin = (mp_data_average.begin() + mid);
+  auto iter = std::min_element(second_half_begin, mp_data_average.end());
+  long xi = std::distance(mp_data_average.begin(), iter);
 
     double sy = 0.0;
     double Y = mp_data_average.at(xi);
@@ -286,7 +321,7 @@ void membrane_test::Panel::MP_Calculate()
     double t = 0.0;
     double tt = 0.0;
     double Yt = 0.0;
-    for (size_t i = xi + 1; i < data_size; ++i) {
+  for (size_t i = static_cast<size_t>(xi) + 1; i < n; ++i) {
       sy += dt * 1e-3 * (mp_data_average.at(i - 1) + mp_data_average.at(i)) / 2;
 
       Y += mp_data_average.at(i);
@@ -327,18 +362,49 @@ void membrane_test::Panel::MP_Calculate()
 
     gsl_linalg_SV_decomp(&a.matrix, &b.matrix, &c.vector, &d.vector);
     gsl_linalg_SV_solve(&a.matrix, &b.matrix, &c.vector, &e.vector, &d.vector);
-    tau2 = fabs(1.0 / x.at(1));
+    double x1 = x.at(1);
+    if (!std::isfinite(x1) || fabs(x1) < 1e-12) {
+      // No measurable curvature in fit (division would be invalid)
+      no_curvature2 = true;
+      tau2 = NAN;
+    } else {
+      tau2 = fabs(1.0 / x1);
+    }
   }
 
-  double tau = (tau1 + tau2) / 2.0;
+  double tau = NAN;
+  if (std::isfinite(tau1) && std::isfinite(tau2)) {
+    tau = (tau1 + tau2) / 2.0;
+  }
   double Q1 = (Q11 + Q12) / 2.0;
-  double Q2 = fabs(I1 - I2) * tau;
+  double deltaI = fabs(I1 - I2);
+  double Q2 = deltaI * tau;
   double Qt = Q1 + Q2;
-  double rt = Vpp * 1e-3 / fabs(I1 - I2);
 
-  ra = tau * Vpp * 1e-3 / Qt;
-  rm = rt - ra;
-  cm = Qt * rt / (Vpp * 1e-3 * rm);
+  double rt = NAN;
+  if (deltaI > 1e-12) {
+    rt = Vpp * 1e-3 / deltaI;
+  }
+
+  // Protect against division by zero
+  if (Qt <= 0 || !std::isfinite(Qt) || !std::isfinite(tau) || !std::isfinite(rt)) {
+    ra = 0.0;
+    rm = 0.0;
+    cm = 0.0;
+    // If the cause was lack of curvature in the exponential fit, warn the
+    // user so they know the measurement couldn't produce reliable values.
+    if (no_curvature1 || no_curvature2) {
+      ERROR_MSG("MP_Calculate: Fit reported no measurable curvature; ra/rm/cm set to 0. Check data quality or increase fitting window.");
+    }
+  } else {
+    ra = tau * Vpp * 1e-3 / Qt;
+    rm = rt - ra;
+    if (rm == 0.0) {
+      cm = 0.0;
+    } else {
+      cm = Qt * rt / (Vpp * 1e-3 * rm);
+    }
+  }
 
   ra = round(ra * 1e-6 * 10) / 10;
   rm = round(rm * 1e-6 * 10) / 10;
