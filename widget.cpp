@@ -372,9 +372,14 @@ void membrane_test::Panel::MP_Calculate()
     }
   }
 
+  // --- changed: allow one-sided tau if only one fit succeeded ---
   double tau = NAN;
   if (std::isfinite(tau1) && std::isfinite(tau2)) {
     tau = (tau1 + tau2) / 2.0;
+  } else if (std::isfinite(tau1)) {
+    tau = tau1;           // fallback to first fit
+  } else if (std::isfinite(tau2)) {
+    tau = tau2;           // fallback to second fit
   }
   double Q1 = (Q11 + Q12) / 2.0;
   double deltaI = fabs(I1 - I2);
