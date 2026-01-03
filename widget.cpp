@@ -243,7 +243,7 @@ void membrane_test::Panel::MP_Calculate()
     double t = 0.0;
     double tt = 0.0;
     double Yt = 0.0;
-  for (size_t i = static_cast<size_t>(xi) + 1; i < mid; ++i) {
+  for (long i = xi + 1; i < mid/4; ++i) {
       sy += dt * 1e-3 * (mp_data_average.at(i - 1) + mp_data_average.at(i)) / 2;
 
       Y += mp_data_average.at(i);
@@ -321,7 +321,7 @@ void membrane_test::Panel::MP_Calculate()
     double t = 0.0;
     double tt = 0.0;
     double Yt = 0.0;
-  for (size_t i = static_cast<size_t>(xi) + 1; i < n; ++i) {
+  for (long i = xi + 1; i < 5 * n / 4; ++i) {
       sy += dt * 1e-3 * (mp_data_average.at(i - 1) + mp_data_average.at(i)) / 2;
 
       Y += mp_data_average.at(i);
